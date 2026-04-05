@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}{{ session.date }} — {{ exercise.name }} — Gym Tracker{% endblock %}
+
+{% block content %}
+<a class="back-link" href="/exercise/{{ exercise.id }}">← {{ exercise.name }}</a>
+
+<h2>{{ exercise.name }}</h2>
+<p style="color: #888; margin-bottom: 1.5rem;">Session: <span style="color: #ff6b35;">{{ session.date }}</span></p>
+
+<h2>Add Set</h2>
+<div class="card">
+    <form action="/set" method="POST" class="inline-form">
+        <input type="hidden" name="exercise_id" value="{{ exercise.id }}">
+        <input type="hidden" name="session_id" value="{{ session.id }}">
+        <input type="number" name="set_number" placeholder="Set #" min="1" required>
+        <input type="number" name="reps" placeholder="Reps" min="1" required>
+        <input type="number" name="weight" placeholder="Weight (lbs)" step="0.5" min="0" required>
+        <button type="submit">Add Set</button>
+    </form>
+</div>
+
+<h2>Sets</h2>
+<div class="card">
+    {% if sets %}
+    <table>
+        <thead>
+            <tr>
+                <th>Set</th>
+                <th>Reps</th>
+                <th>Weight (lbs)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in sets %}
+            <tr>
+                <td>{{ s.set_number }}</td>
+                <td>{{ s.reps }}</td>
+                <td>{{ s.weight }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No sets logged yet. Add one above!</p>
+    {% endif %}
+</div>
+{% endblock %}

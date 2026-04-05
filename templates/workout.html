@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block title %}Workout — Gym Tracker{% endblock %}
+
+{% block content %}
+
+<!-- SUMMARY -->
+{% if summary %}
+<div class="summary-row">
+    <div class="stat-pill"><span class="val">{{ summary.exercises }}</span> <span class="lbl">exercises</span></div>
+    <div class="stat-pill"><span class="val">{{ summary.sets }}</span> <span class="lbl">sets</span></div>
+    <div class="stat-pill"><span class="val">{{ summary.volume }}</span> <span class="lbl">lbs</span></div>
+    {% if summary.prs > 0 %}
+    <div class="stat-pill pr"><span class="val">🏆 {{ summary.prs }}</span> <span class="lbl">PRs</span></div>
+    {% endif %}
+    <a href="/session/{{ session.id }}/summary" class="btn btn-ghost" style="border-radius:999px;padding:0.4rem 1rem;font-size:0.8rem;">📊 Summary</a>
+</div>
+{% endif %}
+
+<!-- WORKOUT HEADER -->
+<div class="workout-header">
+    <div style="font-size: 1.1rem; font-weight: 700;">Active Workout</div>
+    <div class="date">{{ session.date }}</div>
+</div>
+
+<!-- ADD EXERCISE -->
+<div style="margin-bottom: 2rem;">
+    <div class="section-label">Add Exercise</div>
+    <form action="/session/{{ session.id }}/add_exercise" method="POST" class="input-row autocomplete">
+        <div style="flex:2; position:relative;">
+            <input type="text" name="exercise_name" placeholder="Search or type exercise name..." id="exerciseInput" autocomplete="off">
+            <div class="autocomplete-list" id="autocomplete"></div>
+        </div>
+        <div style="flex:1;">
+            <select name="muscle_group" id="muscleGroupSelect">
+                <option value="">Muscle...</option>
+                {% for mg in muscle_groups %}<option value="{{ mg }}">{{ mg }}</option>{% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn">Add</button>
+    </form>
+</div>
+
+<!-- EXERCISES -->
+{% if exercises_data %}
+    {% for ex in exercises_data %}
+    <div class="ex-block">
+        <div class="ex-header">
+            <div class="ex-name">
+                {{ ex.name }}
+                {% if ex.muscle_group %}<span class="muscle-badge">{{ ex.muscle_group }}</span>{% endif %}
+                {% if ex.note %}<span class="note-dot"></span>{% endif %}
+            </div>
+            <div class="ex-actions">
+                <button class="btn btn-note {% if ex.note %}has{% endif %}" onclick="toggleNote('{{ ex.se_id }}')">📝 Note</button>
+                <form action="/session/{{ session.id }}/remove_exercise/{{ ex.se_id }}" method="POST" onsubmit="return confirm('Remove {{ ex.name }}?');" style="margin:0;">
+                    <button type="submit" class="btn btn-ghost-red">✕</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Note area -->
+        <div id="note-area-{{ ex.se_id }}" style="display:none;" class="note-area">
+            <form action="/note/update" method="POST">
+                <input type="hidden" name="session_exercise_id" value="{{ ex.se_id }}">
+                <input type="hidden" name="session_id" value="{{ session.id }}">
+                <textarea name="note" rows="2" placeholder="Form cues, how it felt...">{{ ex.note or '' }}</textarea>
+                <div style="margin-top:0.5rem; display:flex;gap:0.4rem;">
+                    <button type="submit" class="btn btn-sm">Save</button>
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="toggleNote('{{ ex.se_id }}')">Cancel</button>
+                </div>
+            </form>
+        </div>
+
+        {% if ex.note %}<div class="note-text-full">{{ ex.note }}</div>{% endif %}
+
+        <!-- Prev performance -->
+        {% if ex.prev_sets %}
+        <div class="prev-hint">Last session: {% for s in ex.prev_sets %}{{ s.reps }}×{{ s.weight }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+        {% endif %}
+
+        <!-- PR hint -->
+        {% if ex.pr_weight %}
+        <div style="font-size:0.78rem;color:#5a5000;margin-bottom:0.5rem;">🏆 PR: {{ ex.pr_weight }}lbs best</div>
+        {% endif %}
+
+        <!-- Add set -->
+        <div class="log-set">
+            <form action="/set/add" method="POST" class="log-set-form">
+                <input type="hidden" name="session_exercise_id" value="{{ ex.se_id }}">
+                <input type="hidden" name="session_id" value="{{ session.id }}">
+                <input type="hidden" name="exercise_id" value="{{ ex.eid }}">
+                <input type="hidden" name="set_number" value="{{ ex.sets|length + 1 }}">
+                <div>
+                    <label>Reps</label>
+                    <input type="number" name="reps" min="1" placeholder="—" required>
+                </div>
+                <div>
+                    <label>Weight (lbs)</label>
+                    <input type="number" name="weight" step="0.5" min="0" placeholder="—" required>
+                </div>
+                <button type="submit" class="btn">Log Set</button>
+            </form>
+        </div>
+
+        <!-- Logged sets -->
+        {% for s in ex.sets %}
+        <div class="set-row">
+            <div class="set-label">Set {{ s.set_number }}{% if s.is_pr %}<span class="pr-badge">PR</span>{% endif %}</div>
+            <div class="set-values">
+                <div><span>reps</span><strong>{{ s.reps }}</strong></div>
+                <div><span>lbs</span><strong>{{ s.weight }}</strong></div>
+            </div>
+            <form action="/set/{{ s.id }}/delete" method="POST" style="margin:0;">
+                <button type="submit" class="btn btn-ghost-red" style="padding:0.3rem 0.5rem;font-size:0.75rem;">✕</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+{% else %}
+<div class="empty">No exercises yet. Add one above.</div>
+{% endif %}
+
+<!-- END WORKOUT -->
+<div class="end-workout">
+    <form action="/session/{{ session.id }}/end" method="POST">
+        <button type="submit" class="btn btn-start btn-block">✅ End Workout</button>
+    </form>
+</div>
+
+<script>
+const input = document.getElementById('exerciseInput');
+const list = document.getElementById('autocomplete');
+const muscleSelect = document.getElementById('muscleGroupSelect');
+let timeout = null;
+
+input.addEventListener('input', () => {
+    clearTimeout(timeout);
+    const q = input.value.trim();
+    if (q.length < 1) { list.classList.remove('show'); return; }
+    timeout = setTimeout(async () => {
+        const res = await fetch(`/api/exercises?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        list.innerHTML = '';
+        if (data.length === 0) {
+            list.innerHTML = `<div class="autocomplete-item" style="color:#444;font-style:italic;">+ Create new: ${input.value}</div>`;
+            list.classList.add('show');
+            return;
+        }
+        data.forEach(ex => {
+            const div = document.createElement('div');
+            div.className = 'autocomplete-item';
+            const mg = ex.muscle_group ? `<small>${ex.muscle_group}</small>` : '';
+            const best = ex.best_weight ? `<small>🏆 ${ex.best_weight}lbs</small>` : '';
+            div.innerHTML = `${ex.name}${mg}${best}`;
+            div.addEventListener('click', () => {
+                input.value = ex.name;
+                if (ex.muscle_group && !muscleSelect.value) muscleSelect.value = ex.muscle_group;
+                list.classList.remove('show');
+            });
+            list.appendChild(div);
+        });
+        list.classList.add('show');
+    }, 150);
+});
+
+document.addEventListener('click', e => {
+    if (!e.target.closest('.autocomplete')) list.classList.remove('show');
+});
+
+function toggleNote(id) {
+    const el = document.getElementById('note-area-' + id);
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    if (el.style.display === 'block') el.querySelector('textarea').focus();
+}
+</script>
+
+{% endblock %}

@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}Gym Tracker{% endblock %}
+
+{% block content %}
+
+<!-- START WORKOUT -->
+<div style="margin-bottom: 2.5rem;">
+    <form action="/session/start" method="POST">
+        <button type="submit" class="btn btn-start btn-block">🏋️ Start Workout</button>
+    </form>
+</div>
+
+<!-- ADD EXERCISE -->
+<div style="margin-bottom: 2rem;">
+    <div class="section-label">Add Exercise</div>
+    <form action="/session/start" method="POST" class="input-row autocomplete">
+        <div style="flex:2; position:relative;">
+            <input type="text" name="dummy" placeholder="Search or type exercise name..." id="exerciseInput" autocomplete="off">
+            <div class="autocomplete-list" id="autocomplete"></div>
+        </div>
+        <div style="flex:1;">
+            <select id="muscleGroupSelect">
+                <option value="">Muscle...</option>
+                {% for mg in muscle_groups %}<option value="{{ mg }}">{{ mg }}</option>{% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn">Add</button>
+    </form>
+</div>
+
+<!-- EXERCISES LIST -->
+<div>
+    <div class="section-label">{{ exercises|length }} Exercise{{ 's' if exercises|length != 1 else '' }}</div>
+    {% if exercises %}
+    <ul class="exercise-list">
+        {% for ex in exercises %}
+        <li class="exercise-row">
+            <div class="exercise-info">
+                {% if active_session %}
+                <div class="exercise-name">{{ ex.name }}</div>
+                {% else %}
+                <a href="#" onclick="showProgress('{{ ex.id }}', '{{ ex.name }}'); return false;" class="exercise-name" style="color:#e8e8e8;text-decoration:none;">{{ ex.name }}</a>
+                {% endif %}
+                <div class="exercise-meta">
+                    {{ ex.times_used }}x used
+                    {% if ex.last_used %}· {{ ex.last_used }}{% endif %}
+                    {% if ex.best_weight %}· 🏆 {{ ex.best_weight }}lbs{% endif %}
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+                {% if ex.muscle_group %}<span class="muscle-badge">{{ ex.muscle_group }}</span>{% endif %}
+                {% if not active_session %}
+                <form action="/session/start" method="POST" style="margin:0;">
+                    <button type="submit" class="btn" style="padding:0.4rem 0.75rem;font-size:0.8rem;">🏋️</button>
+                </form>
+                {% endif %}
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty">No exercises yet. Add one above.</div>
+    {% endif %}
+</div>
+
+<!-- PROGRESS MODAL -->
+<div class="modal-overlay" id="progressModal">
+    <div class="modal">
+        <button class="modal-close" onclick="closeModal()">✕</button>
+        <h3 id="modalTitle">Progress</h3>
+        <div class="chart-wrap">
+            <canvas id="progressChart" height="200"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+const input = document.getElementById('exerciseInput');
+const list = document.getElementById('autocomplete');
+let timeout = null;
+
+input.addEventListener('input', () => {
+    clearTimeout(timeout);
+    const q = input.value.trim();
+    if (q.length < 1) { list.classList.remove('show'); return; }
+    timeout = setTimeout(async () => {
+        const res = await fetch(`/api/exercises?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        list.innerHTML = '';
+        if (data.length === 0) {
+            list.innerHTML = `<div class="autocomplete-item" style="color:#444;font-style:italic;">+ Create new: ${input.value}</div>`;
+            list.classList.add('show');
+            return;
+        }
+        data.forEach(ex => {
+            const div = document.createElement('div');
+            div.className = 'autocomplete-item';
+            const mg = ex.muscle_group ? `<small>${ex.muscle_group}</small>` : '';
+            const best = ex.best_weight ? `<small>🏆 ${ex.best_weight}lbs</small>` : '';
+            div.innerHTML = `${ex.name}${mg}${best}`;
+            div.addEventListener('click', () => {
+                input.value = ex.name;
+                if (ex.muscle_group) document.getElementById('muscleGroupSelect').value = ex.muscle_group;
+                list.classList.remove('show');
+            });
+            list.appendChild(div);
+        });
+        list.classList.add('show');
+    }, 150);
+});
+
+document.addEventListener('click', e => {
+    if (!e.target.closest('.autocomplete')) list.classList.remove('show');
+});
+
+let chart = null;
+async function showProgress(exerciseId, name) {
+    document.getElementById('modalTitle').textContent = name + ' — Progress';
+    document.getElementById('progressModal').classList.add('show');
+    const res = await fetch(`/api/exercise/${exerciseId}/progress`);
+    const data = await res.json();
+    if (!data || data.length === 0) {
+        if (chart) { chart.destroy(); chart = null; }
+        return;
+    }
+    const byDate = {};
+    data.forEach(r => { if (!byDate[r.date] || r.weight > byDate[r.date]) byDate[r.date] = r.weight; });
+    const labels = Object.keys(byDate).slice(-12);
+    const values = labels.map(d => byDate[d]);
+    if (chart) chart.destroy();
+    chart = new Chart(document.getElementById('progressChart'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Best Weight (lbs)',
+                data: values,
+                borderColor: '#ff6b35',
+                backgroundColor: 'rgba(255,107,53,0.08)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 5,
+                pointBackgroundColor: '#ff6b35',
+                pointBorderColor: '#111'
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: { grid: { color: '#222' }, ticks: { color: '#555', font: { size: 11 } } },
+                x: { grid: { color: '#222' }, ticks: { color: '#555', font: { size: 11 } } }
+            },
+            plugins: { legend: { display: false } }
+        }
+    });
+}
+
+function closeModal() {
+    document.getElementById('progressModal').classList.remove('show');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+</script>
+
+{% endblock %}

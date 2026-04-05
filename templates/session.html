@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}{{ exercise.name }} Workout — Gym Tracker{% endblock %}
+
+{% block content %}
+<a class="back-link" href="/exercise/{{ exercise.id }}">← {{ exercise.name }}</a>
+
+<h2>Log Workout: {{ exercise.name }}</h2>
+
+<div class="card">
+    <form action="/session/{{ exercise.id }}" method="POST">
+        <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem;">
+            <input type="date" name="date" value="{{ today }}" required>
+            <button type="submit">New Session</button>
+        </div>
+    </form>
+</div>
+
+{% if prev_sets %}
+<div class="prev-sets">
+    <h4>Last Session Performance</h4>
+    <table>
+        <thead>
+            <tr>
+                <th>Set</th>
+                <th>Reps</th>
+                <th>Weight (lbs)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in prev_sets %}
+            <tr>
+                <td>{{ s.set_number }}</td>
+                <td>{{ s.reps }}</td>
+                <td>{{ s.weight }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<h2>Past Sessions</h2>
+<div class="card">
+    {% if sessions %}
+        {% for session in sessions %}
+        <div class="session-card">
+            <a href="/session/{{ exercise.id }}/{{ session.id }}">
+                <div class="session-date">{{ session.date }}</div>
+                <div class="session-meta">{{ session.set_count }} sets</div>
+            </a>
+        </div>
+        {% endfor %}
+    {% else %}
+        <p class="empty">No sessions yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

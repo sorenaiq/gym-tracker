@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}{{ exercise.name }} — Gym Tracker{% endblock %}
+
+{% block content %}
+<a class="back-link" href="/">← All Exercises</a>
+
+<h2>{{ exercise.name }}</h2>
+
+<div style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
+    <a href="/session/{{ exercise.id }}"><button>🏋️ Log Workout</button></a>
+</div>
+
+<h2>History</h2>
+<div class="card">
+    {% if sessions %}
+        {% for session in sessions %}
+        <div class="session-card">
+            <a href="/session/{{ exercise.id }}/{{ session.id }}">
+                <div class="session-date">{{ session.date }}</div>
+                <div class="session-meta">
+                    {{ session.set_count }} sets
+                    {% if session.total_volume %}• {{ session.total_volume|int }} lbs volume{% endif %}
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    {% else %}
+        <p class="empty">No workouts logged yet. Start one!</p>
+    {% endif %}
+</div>
+{% endblock %}

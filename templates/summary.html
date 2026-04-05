@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Summary — Gym Tracker{% endblock %}
+
+{% block content %}
+
+<div style="text-align:center; margin-bottom: 2rem;">
+    <div style="font-size: 1.1rem; font-weight: 700;">Workout Summary</div>
+    <div style="color: #555; font-size: 0.875rem; margin-top: 0.3rem;">{{ session.date }}</div>
+    <a href="/session/{{ session.id }}" class="btn btn-ghost" style="margin-top:1rem;">← Back to Workout</a>
+</div>
+
+<!-- TOTALS -->
+<div class="summary-row">
+    <div class="stat-pill"><span class="val">{{ total_sets }}</span> <span class="lbl">total sets</span></div>
+    <div class="stat-pill"><span class="val">{{ total_volume }}</span> <span class="lbl">lbs volume</span></div>
+    {% if total_prs > 0 %}
+    <div class="stat-pill pr"><span class="val">🏆 {{ total_prs }}</span> <span class="lbl">PRs</span></div>
+    {% endif %}
+</div>
+
+<!-- EXERCISES -->
+{% for ex in data %}
+<div style="margin-bottom: 1.75rem;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+        <div style="font-weight:700;font-size:1rem;">{{ ex.name }}{% if ex.muscle_group %}<span class="muscle-badge">{{ ex.muscle_group }}</span>{% endif %}</div>
+        <div style="font-size:0.8rem;color:#444;">{{ ex.sets|length }} sets · {{ ex.volume }} lbs</div>
+    </div>
+    {% for s in ex.sets %}
+    <div class="set-row" style="padding-left:0.5rem;">
+        <div class="set-label">Set {{ s.set_number }}{% if s.is_pr %}<span class="pr-badge">PR</span>{% endif %}</div>
+        <div class="set-values">
+            <div><span>reps</span><strong>{{ s.reps }}</strong></div>
+            <div><span>lbs</span><strong>{{ s.weight }}</strong></div>
+            <div><span>vol</span><strong>{{ s.reps * s.weight }}</strong></div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endfor %}
+
+<div style="text-align:center; margin-top: 2rem;">
+    <a href="/" class="btn btn-start btn-block">🏠 Back Home</a>
+</div>
+
+{% endblock %}
