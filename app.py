@@ -234,13 +234,66 @@ def index():
             if r['reps'] and r['weight'] is not None:
                 last_workout['exercises'].append(f"{r['name']} {r['reps']}×{int(r['weight'])}")
 
-    # Get saved templates
-    templates = db.execute('SELECT * FROM workout_templates ORDER BY created_at DESC LIMIT 5').fetchall()
-    import json
-    templates_data = []
-    for t in templates:
-        names = json.loads(t['exercise_names'])
-        templates_data.append({'id': t['id'], 'name': t['name'], 'exercise_count': len(names)})
+    # Progressive overload: per-exercise volume this week vs last week
+    import datetime as dt
+    this_week_start = today - dt.timedelta(days=today.weekday())
+    last_week_start = this_week_start - dt.timedelta(weeks=1)
+    last_week_end = this_week_start - dt.timedelta(days=1)
+
+    # This week's volume per exercise
+    this_week_rows = db.execute('''
+        SELECT e.id, e.name, SUM(s.reps * s.weight) as vol
+        FROM sets s
+        JOIN session_exercises se ON se.id = s.session_exercise_id
+        JOIN workout_sessions ws ON ws.id = se.session_id
+        JOIN exercises e ON e.id = se.exercise_id
+        WHERE ws.ended = 1 AND ws.date >= ? AND ws.date <= ? AND s.duration_seconds IS NULL
+        GROUP BY e.id
+    ''', (this_week_start.isoformat(), today.isoformat())).fetchall()
+    this_week_vol = {r['id']: int(r['vol'] or 0) for r in this_week_rows}
+
+    # Last week's volume per exercise
+    last_week_rows = db.execute('''
+        SELECT e.id, e.name, SUM(s.reps * s.weight) as vol
+        FROM sets s
+        JOIN session_exercises se ON se.id = s.session_exercise_id
+        JOIN workout_sessions ws ON ws.id = se.session_id
+        JOIN exercises e ON e.id = se.exercise_id
+        WHERE ws.ended = 1 AND ws.date >= ? AND ws.date <= ? AND s.duration_seconds IS NULL
+        GROUP BY e.id
+    ''', (last_week_start.isoformat(), last_week_end.isoformat())).fetchall()
+    last_week_vol = {r['id']: int(r['vol'] or 0) for r in last_week_rows}
+
+    # Build progressive overload list for exercises that appear in either week
+    progressive_overload = []
+    for ex in exercises:
+        eid = ex['id']
+        tw = this_week_vol.get(eid, 0)
+        lw = last_week_vol.get(eid, 0)
+        if tw > 0 or lw > 0:
+            if lw > 0:
+                pct = round((tw - lw) / lw * 100, 1)
+                if tw > lw:
+                    arrow = '↑'
+                elif tw < lw:
+                    arrow = '↓'
+                else:
+                    arrow = '→'
+            else:
+                pct = None
+                arrow = '↑'
+            progressive_overload.append({
+                'id': eid,
+                'name': ex['name'],
+                'this_week': tw,
+                'last_week': lw,
+                'pct': pct,
+                'arrow': arrow,
+            })
+
+    # Sort by this week's volume descending
+    progressive_overload.sort(key=lambda x: x['this_week'], reverse=True)
+
 
     # Muscle group recovery heatmap: last 7 days, most recent session date per muscle group
     from datetime import timedelta
@@ -271,9 +324,9 @@ def index():
     return render_template('index.html', exercises=exercises, active_session=active_session,
                          muscle_groups=MUSCLE_GROUPS, week_labels=week_labels,
                          week_volumes=week_volumes, has_enough_data=has_enough_data,
-                         last_workout=last_workout, templates=templates_data,
+                         last_workout=last_workout,
                          muscle_last_hit=muscle_last_hit, today=today,
-                         recent_prs=recent_prs)
+                         recent_prs=recent_prs, progressive_overload=progressive_overload)
 
 @app.route('/session/start', methods=['POST'])
 def start_session():
@@ -331,31 +384,6 @@ def workout(session_id):
         # Determine if this exercise is timed (per-exercise flag from DB, or pattern match)
         ex_timed = is_timed_exercise(se['name'])
 
-        # Get rest_seconds for this exercise (from exercises table)
-        ex_rest = db.execute('SELECT rest_seconds FROM exercises WHERE id = ?', (se['eid'],)).fetchone()
-        rest_seconds = ex_rest['rest_seconds'] if ex_rest else 90
-
-        # Get the most recent set's created_at (for rest timer)
-        last_set_at = None
-        if sets:
-            last_set_at = max(s['created_at'] for s in sets)
-
-        # Check is_bodyweight flag
-        ex_bw = db.execute('SELECT is_bodyweight FROM exercises WHERE id = ?', (se['eid'],)).fetchone()
-        is_bodyweight = bool(ex_bw['is_bodyweight']) if ex_bw else False
-
-        # Check difficulty
-        ex_diff = db.execute('SELECT difficulty FROM exercises WHERE id = ?', (se['eid'],)).fetchone()
-        difficulty = ex_diff['difficulty'] if ex_diff and ex_diff['difficulty'] else 'intermediate'
-
-        sets_list = [dict(s) for s in sets]
-
-        # Count drop sets per parent set id for this session exercise
-        drop_set_counts = {}
-        for s in sets_list:
-            if s.get('parent_set_id'):
-                drop_set_counts[s['parent_set_id']] = drop_set_counts.get(s['parent_set_id'], 0) + 1
-
         exercises_data.append({
             'se_id': se['se_id'],
             'eid': se['eid'],
@@ -364,16 +392,11 @@ def workout(session_id):
             'note': se['note'],
             'added_at': se['id'],
             'superset_group': se['superset_group'],
-            'sets': sets_list,
-            'drop_set_counts': drop_set_counts,
+            'sets': [dict(s) for s in sets],
             'prev_sets': [dict(s) for s in prev_sets_raw],
             'pr_weight': prs['max_weight'] if prs else None,
             'pr_reps': prs['max_reps'] if prs else None,
             'is_timed': ex_timed,
-            'rest_seconds': rest_seconds,
-            'last_set_at': last_set_at,
-            'is_bodyweight': is_bodyweight,
-            'difficulty': difficulty,
         })
 
     # Workout summary
@@ -394,9 +417,7 @@ def workout(session_id):
         'id': e['id'],
         'name': e['name'],
         'muscle_group': e['muscle_group'],
-        'difficulty': e['difficulty'] if 'difficulty' in e and e['difficulty'] else 'intermediate',
         'is_timed': bool(e['is_timed']) or is_timed_exercise(e['name']),
-        'is_bodyweight': bool(e['is_bodyweight']) if 'is_bodyweight' in e else False,
     } for e in all_exercises]
     # Find previous session for comparison
     prev_session = None
@@ -438,48 +459,22 @@ def workout(session_id):
                          all_exercises=all_exercises_data, summary=summary, muscle_groups=MUSCLE_GROUPS,
                          rep_ranges=REP_RANGES, prev_session=prev_session)
 
-@app.route('/session/<int:session_id>/tags', methods=['GET'])
-def get_session_tags(session_id):
-    """Return tags for a session as JSON."""
-    db = get_db()
-    import json
-    row = db.execute('SELECT tags FROM workout_sessions WHERE id = ?', (session_id,)).fetchone()
-    if not row:
-        return jsonify({'error': 'Not found'}), 404
-    try:
-        tags = json.loads(row['tags']) if row['tags'] else []
-    except (ValueError, TypeError):
-        tags = []
-    return jsonify({'tags': tags})
-
 @app.route('/session/<int:session_id>/add_exercise', methods=['POST'])
 def add_exercise_to_session(session_id):
     db = get_db()
     exercise_name = request.form['exercise_name'].strip()
     muscle_group = request.form.get('muscle_group', '')
-    difficulty = request.form.get('difficulty', 'intermediate')
-    if difficulty not in ('beginner', 'intermediate', 'advanced'):
-        difficulty = 'intermediate'
     if not exercise_name:
         return redirect(url_for('workout', session_id=session_id))
 
-    ex = db.execute('SELECT id, muscle_group, difficulty FROM exercises WHERE name = ?', (exercise_name,)).fetchone()
+    ex = db.execute('SELECT id, muscle_group FROM exercises WHERE name = ?', (exercise_name,)).fetchone()
     if not ex:
-        db.execute('INSERT INTO exercises (name, muscle_group, difficulty) VALUES (?, ?, ?)', (exercise_name, muscle_group, difficulty))
+        db.execute('INSERT INTO exercises (name, muscle_group) VALUES (?, ?)', (exercise_name, muscle_group))
         db.commit()
-        ex = db.execute('SELECT id, muscle_group, difficulty FROM exercises WHERE name = ?', (exercise_name,)).fetchone()
+        ex = db.execute('SELECT id, muscle_group FROM exercises WHERE name = ?', (exercise_name,)).fetchone()
     else:
-        updates = []
-        params = []
         if not ex['muscle_group'] and muscle_group:
-            updates.append('muscle_group = ?')
-            params.append(muscle_group)
-        if not ex['difficulty'] and difficulty:
-            updates.append('difficulty = ?')
-            params.append(difficulty)
-        if updates:
-            params.append(ex['id'])
-            db.execute(f"UPDATE exercises SET {', '.join(updates)} WHERE id = ?", params)
+            db.execute('UPDATE exercises SET muscle_group = ? WHERE id = ?', (muscle_group, ex['id']))
             db.commit()
 
     try:
@@ -659,65 +654,7 @@ def reorder_exercises(session_id):
     db.commit()
     return jsonify({'ok': True})
 
-@app.route('/note/update', methods=['POST'])
-def update_note():
-    db = get_db()
-    se_id = request.form['session_exercise_id']
-    session_id = request.form['session_id']
-    note = request.form['note'].strip()
-    db.execute('UPDATE session_exercises SET note = ? WHERE id = ?', (note, se_id))
-    db.commit()
-    return redirect(url_for('workout', session_id=session_id))
 
-@app.route('/session/<int:session_id>/exercise/<int:se_id>/note', methods=['POST'])
-def update_exercise_note(session_id, se_id):
-    """Update note for a specific session exercise. Accepts JSON or form data."""
-    db = get_db()
-    # Verify the session exercise belongs to this session
-    se = db.execute('SELECT id FROM session_exercises WHERE id = ? AND session_id = ?', (se_id, session_id)).fetchone()
-    if not se:
-        return jsonify({'error': 'Not found'}), 404
-    note = request.form.get('note', '').strip() if request.form else (request.get_json() or {}).get('note', '').strip()
-    db.execute('UPDATE session_exercises SET note = ? WHERE id = ?', (note, se_id))
-    db.commit()
-    if request.headers.get('Accept') == 'application/json' or request.is_json:
-        return jsonify({'ok': True, 'note': note})
-    return redirect(url_for('workout', session_id=session_id))
-
-@app.route('/session/<int:session_id>/exercise/<int:se_id>/note/append', methods=['POST'])
-def append_exercise_note(session_id, se_id):
-    """Append a timestamped note line to the session_exercise's note (JSON array).
-    Body: { "note": "felt strong" }
-    Returns: { "ok": true, "notes": [...] }
-    """
-    import json
-    db = get_db()
-    se = db.execute('SELECT id, note FROM session_exercises WHERE id = ? AND session_id = ?', (se_id, session_id)).fetchone()
-    if not se:
-        return jsonify({'error': 'Not found'}), 404
-
-    data = request.get_json() or {}
-    text = data.get('note', '').strip()
-    if not text:
-        return jsonify({'error': 'Note text required'}), 400
-
-    # Load existing notes array
-    try:
-        notes = json.loads(se['note']) if se['note'] else []
-        if not isinstance(notes, list):
-            notes = []
-    except (ValueError, TypeError):
-        notes = []
-
-    # Append new entry
-    notes.append({
-        'text': text,
-        'timestamp': datetime.now().isoformat()
-    })
-
-    db.execute('UPDATE session_exercises SET note = ? WHERE id = ?', (json.dumps(notes), se_id))
-    db.commit()
-    return jsonify({'ok': True, 'notes': notes})
 
 @app.route('/session/<int:session_id>/end', methods=['POST'])
 def end_workout(session_id):
@@ -867,47 +804,6 @@ def api_warmup():
     ]
     return jsonify(sets)
 
-@app.route('/session/<int:session_id>/rate', methods=['POST'])
-def rate_session(session_id):
-    """Set or update the rating (1-5) for a workout session."""
-    db = get_db()
-    rating = request.form.get('rating', type=int)
-    if rating is not None:
-        rating = max(1, min(5, rating))
-    else:
-        rating = None
-    db.execute('UPDATE workout_sessions SET rating = ? WHERE id = ?', (rating, session_id))
-    db.commit()
-    return redirect(url_for('workout_summary', session_id=session_id))
-
-@app.route('/session/<int:session_id>/tags', methods=['POST'])
-def set_session_tags(session_id):
-    """Set or update tags for a workout session.
-    Accepts form data or JSON with comma-separated tags string.
-    """
-    db = get_db()
-    session = db.execute('SELECT id FROM workout_sessions WHERE id = ?', (session_id,)).fetchone()
-    if not session:
-        return jsonify({'error': 'Session not found'}), 404
-
-    # Parse tags from form or JSON body
-    tags_str = ''
-    if request.is_json:
-        data = request.get_json() or {}
-        tags_str = data.get('tags', '')
-    else:
-        tags_str = request.form.get('tags', '')
-
-    # Normalize: split on commas, strip whitespace, filter empty
-    import json
-    tags_list = [t.strip() for t in tags_str.split(',') if t.strip()]
-    db.execute('UPDATE workout_sessions SET tags = ? WHERE id = ?', (json.dumps(tags_list), session_id))
-    db.commit()
-
-    if request.is_json or request.headers.get('Accept') == 'application/json':
-        return jsonify({'ok': True, 'tags': tags_list})
-    return redirect(url_for('workout_summary', session_id=session_id))
-
 @app.route('/history')
 def workout_history():
     """Show all past workout sessions (ended=1), most recent first."""
@@ -990,65 +886,6 @@ def toggle_favorite(exercise_id):
     db.commit()
     return jsonify({'id': exercise_id, 'is_favorite': new_val})
 
-
-@app.route('/exercise/<int:exercise_id>/bodyweight', methods=['POST'])
-def toggle_bodyweight(exercise_id):
-    """Toggle is_bodyweight for an exercise. When set, weight input is hidden for that exercise."""
-    db = get_db()
-    ex = db.execute('SELECT id, is_bodyweight FROM exercises WHERE id = ?', (exercise_id,)).fetchone()
-    if not ex:
-        return jsonify({'error': 'Not found'}), 404
-    new_val = 0 if ex['is_bodyweight'] else 1
-    db.execute('UPDATE exercises SET is_bodyweight = ? WHERE id = ?', (new_val, exercise_id))
-    db.commit()
-    return jsonify({'id': exercise_id, 'is_bodyweight': new_val})
-
-@app.route('/exercise/<int:exercise_id>/difficulty', methods=['POST'])
-def set_difficulty(exercise_id):
-    """Set the difficulty for an exercise. Cycles through beginner -> intermediate -> advanced -> beginner."""
-    db = get_db()
-    ex = db.execute('SELECT id, difficulty FROM exercises WHERE id = ?', (exercise_id,)).fetchone()
-    if not ex:
-        return jsonify({'error': 'Not found'}), 404
-    data = request.get_json() or {}
-    new_diff = data.get('difficulty')
-    if new_diff not in ('beginner', 'intermediate', 'advanced'):
-        # Cycle: beginner->intermediate->advanced->beginner
-        cycle = ['beginner', 'intermediate', 'advanced']
-        current = ex['difficulty'] or 'intermediate'
-        try:
-            idx = cycle.index(current)
-        except ValueError:
-            idx = 1
-        new_diff = cycle[(idx + 1) % 3]
-    db.execute('UPDATE exercises SET difficulty = ? WHERE id = ?', (new_diff, exercise_id))
-    db.commit()
-    return jsonify({'id': exercise_id, 'difficulty': new_diff})
-
-@app.route('/set/<int:set_id>/drop', methods=['POST'])
-def drop_set(set_id):
-    """Create a drop set: same reps, weight reduced by 25%, linked to parent via parent_set_id."""
-    db = get_db()
-    parent = db.execute('SELECT * FROM sets WHERE id = ?', (set_id,)).fetchone()
-    if not parent:
-        return jsonify({'error': 'Not found'}), 404
-
-    se = db.execute('SELECT session_id, exercise_id FROM session_exercises WHERE id = ?', (parent['session_exercise_id'],)).fetchone()
-    if not se:
-        return jsonify({'error': 'Not found'}), 404
-
-    # Get next set number for this session exercise
-    max_set = db.execute('SELECT MAX(set_number) as m FROM sets WHERE session_exercise_id = ?', (parent['session_exercise_id'],)).fetchone()
-    next_set_number = (max_set['m'] or parent['set_number']) + 1
-
-    new_weight = round(parent['weight'] * 0.75, 2)
-    db.execute('''
-        INSERT INTO sets (session_exercise_id, set_number, reps, weight, rpe, is_pr, duration_seconds, parent_set_id)
-        VALUES (?, ?, ?, ?, ?, 0, ?, ?)
-    ''', (parent['session_exercise_id'], next_set_number, parent['reps'], new_weight,
-          parent['rpe'], parent['duration_seconds'], set_id))
-    db.commit()
-    return redirect(url_for('workout', session_id=se['session_id']))
 
 
 @app.route('/exercises/by-muscle')
@@ -1273,72 +1110,6 @@ def reset_db():
     db.commit()
     init_db()
     return redirect(url_for('index'))
-
-@app.route('/session/<int:session_id>/save-as-template', methods=['POST'])
-def save_template(session_id):
-    """Save a session's exercises as a named template."""
-    db = get_db()
-    session = db.execute('SELECT id FROM workout_sessions WHERE id = ?', (session_id,)).fetchone()
-    if not session:
-        return redirect(url_for('index'))
-    name = request.form.get('name', '').strip()
-    if not name:
-        return redirect(url_for('workout', session_id=session_id))
-    # Collect exercise names from this session
-    rows = db.execute('''
-        SELECT e.name FROM session_exercises se
-        JOIN exercises e ON e.id = se.exercise_id
-        WHERE se.session_id = ?
-        ORDER BY se.id ASC
-    ''', (session_id,)).fetchall()
-    import json
-    exercise_names = json.dumps([r['name'] for r in rows])
-    db.execute('INSERT INTO workout_templates (name, exercise_names) VALUES (?, ?)', (name, exercise_names))
-    db.commit()
-    return redirect(url_for('workout', session_id=session_id))
-
-@app.route('/template/<int:template_id>/start', methods=['POST'])
-def start_from_template(template_id):
-    """Start a new session pre-filled with exercises from a template."""
-    db = get_db()
-    tpl = db.execute('SELECT * FROM workout_templates WHERE id = ?', (template_id,)).fetchone()
-    if not tpl:
-        return redirect(url_for('index'))
-    import json
-    exercise_names = json.loads(tpl['exercise_names'])
-    # Start a new session
-    today = date.today().isoformat()
-    db.execute('INSERT INTO workout_sessions (date) VALUES (?)', (today,))
-    db.commit()
-    session_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
-    # Add each exercise from the template
-    for ex_name in exercise_names:
-        ex = db.execute('SELECT id FROM exercises WHERE name = ?', (ex_name,)).fetchone()
-        if not ex:
-            db.execute('INSERT INTO exercises (name) VALUES (?)', (ex_name,))
-            db.commit()
-            ex = db.execute('SELECT id FROM exercises WHERE name = ?', (ex_name,)).fetchone()
-        try:
-            db.execute('INSERT INTO session_exercises (session_id, exercise_id) VALUES (?, ?)',
-                      (session_id, ex['id']))
-            db.commit()
-        except sqlite3.IntegrityError:
-            pass
-    return redirect(url_for('workout', session_id=session_id))
-
-@app.route('/template/<int:template_id>/delete', methods=['POST'])
-def delete_template(template_id):
-    db = get_db()
-    db.execute('DELETE FROM workout_templates WHERE id = ?', (template_id,))
-    db.commit()
-    return redirect(url_for('list_templates'))
-
-@app.route('/templates')
-def list_templates():
-    """Show all saved templates."""
-    db = get_db()
-    templates = db.execute('SELECT * FROM workout_templates ORDER BY created_at DESC').fetchall()
-    return render_template('templates.html', templates=templates)
 
 @app.route('/export/json')
 def export_json():

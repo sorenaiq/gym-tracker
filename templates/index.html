@@ -29,26 +29,6 @@
     </div>
 </div>
 
-<!-- Templates -->
-{% if templates %}
-<div style="margin-bottom: 2rem;">
-    <div class="section-label">Templates</div>
-    <div style="display:flex;flex-direction:column;gap:0.5rem;">
-        {% for tpl in templates %}
-        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:0.8rem 1.1rem;gap:0.75rem;transition:border-color 0.15s,box-shadow 0.15s;" onmouseover="this.style.borderColor='var(--border-hi)';this.style.boxShadow='0 2px 12px rgba(0,0,0,0.3)'" onmouseout="this.style.borderColor='var(--border)';this.style.boxShadow='none'">
-            <div>
-                <div style="font-family:var(--font-head);font-size:0.92rem;font-weight:600;color:var(--text);">{{ tpl.name }}</div>
-                <div style="font-size:0.72rem;color:var(--text-3);margin-top:0.1rem;">{{ tpl.exercise_count }} exercise{{ 's' if tpl.exercise_count != 1 else '' }}</div>
-            </div>
-            <form action="/template/{{ tpl.id }}/start" method="POST" style="margin:0;flex-shrink:0;">
-                <button type="submit" class="btn btn-sm">Start</button>
-            </form>
-        </div>
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
-
 <!-- Volume Trend -->
 {% if has_enough_data %}
 <div style="margin-bottom: 2rem;">
@@ -130,6 +110,37 @@
 </div>
 {% endif %}
 
+<!-- Progressive Overload Panel -->
+{% if progressive_overload %}
+<div style="margin-bottom: 2rem;">
+    <div class="section-label">Progressive Overload</div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;">
+        <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:0;padding:0.55rem 1rem;font-size:0.68rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-3);border-bottom:1px solid var(--border);">
+            <div>Exercise</div>
+            <div style="text-align:right;padding-right:1rem;">Last wk</div>
+            <div style="text-align:right;padding-right:1rem;">This wk</div>
+            <div style="text-align:center;width:60px;">Trend</div>
+        </div>
+        {% for item in progressive_overload %}
+        <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:0;padding:0.55rem 1rem;align-items:center;border-bottom:1px solid var(--border);" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background='none'">
+            <div style="font-size:0.88rem;color:var(--text-2);font-weight:500;">{{ item.name }}</div>
+            <div style="font-family:var(--font-mono);font-size:0.8rem;color:var(--text-3);padding-right:1rem;text-align:right;">{{ item.last_week|int }}</div>
+            <div style="font-family:var(--font-mono);font-size:0.8rem;color:var(--accent);font-weight:600;padding-right:1rem;text-align:right;">{{ item.this_week|int }}</div>
+            <div style="text-align:center;width:60px;">
+                <span style="font-size:0.88rem;
+                    {% if item.arrow == '↑' %}color:#4ade80;{% elif item.arrow == '↓' %}color:#f87171;{% else %}color:var(--text-3);{% endif %}
+                ">{{ item.arrow }}
+                </span>
+                {% if item.pct is not none %}
+                <span style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-3);"> {{ item.pct|abs }}%</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <!-- Exercise Library -->
 <div>
     <div class="section-label">
@@ -162,9 +173,6 @@
                 </div>
             </div>
             <div style="display:flex;align-items:center;gap:0.4rem;">
-                <button class="diff-badge diff-{{ ex.difficulty or 'intermediate' }}" onclick="toggleDifficulty('{{ ex.id }}', this)" title="Difficulty: {{ ex.difficulty or 'intermediate' }} (click to change)">
-                    {{ (ex.difficulty or 'intermediate')[:1]|upper }}
-                </button>
                 {% if ex.muscle_group %}<span class="muscle-badge">{{ ex.muscle_group }}</span>{% endif %}
                 {% if not active_session %}
                 <form action="/session/start" method="POST" style="margin:0;">
@@ -440,22 +448,6 @@ async function toggleFavorite(exerciseId, btn) {
         }
     } catch (e) { console.error('Failed to toggle favorite', e); }
 }
-
-// ── Difficulty Toggle ───────────────────────────────────────────────────────
-async function toggleDifficulty(exerciseId, btn) {
-    try {
-        const res = await fetch(`/exercise/${exerciseId}/difficulty`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
-        });
-        const data = await res.json();
-        const diff = data.difficulty || 'intermediate';
-        btn.textContent = diff[0].toUpperCase();
-        btn.className = `diff-badge diff-${diff}`;
-        btn.title = `Difficulty: ${diff} (click to change)`;
-    } catch (e) { console.error('Failed to toggle difficulty', e); }
-}
 </script>
 
 <style>
@@ -473,23 +465,6 @@ async function toggleDifficulty(exerciseId, btn) {
 }
 .star-btn:hover { color: var(--accent); transform: scale(1.15); }
 .star-btn[title="Remove from favorites"] { color: var(--accent); }
-
-.diff-badge {
-    background: none;
-    border: 1px solid var(--border-hi);
-    border-radius: 4px;
-    font-size: 0.65rem;
-    font-weight: 700;
-    padding: 0.1rem 0.35rem;
-    cursor: pointer;
-    font-family: var(--font-mono);
-    line-height: 1.4;
-    transition: border-color 0.15s, color 0.15s;
-}
-.diff-badge:hover { border-color: var(--accent); color: var(--accent); }
-.diff-beginner { color: #4ade80; border-color: rgba(74,222,128,0.4); }
-.diff-intermediate { color: var(--accent); border-color: rgba(232,184,74,0.4); }
-.diff-advanced { color: #f87171; border-color: rgba(248,113,113,0.4); }
 </style>
 
 {% endblock %}
