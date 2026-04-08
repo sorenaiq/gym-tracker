@@ -4,48 +4,40 @@
 
 {% block content %}
 
-<!-- Recent PRs -->
-{% if recent_prs %}
-<div style="margin-bottom: 1.5rem;">
-    <div class="section-label">Recent PRs 🔥</div>
-    <div style="display:flex;flex-direction:column;gap:0.4rem;">
-        {% for pr in recent_prs %}
-        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:0.45rem 0.85rem;font-size:0.8rem;">
-            <span style="color:var(--text-2);font-weight:500;">{{ pr.name }}</span>
-            <span style="color:var(--text-3);font-size:0.75rem;">{{ pr.reps }}×{{ pr.weight|int }}lb</span>
-            <span style="color:var(--text-3);font-size:0.72rem;">{{ pr.date[5:] }}</span>
+<!-- Hero: Start Workout -->
+<div style="margin-bottom: 2.5rem;">
+    <div style="text-align:center; padding: 2.5rem 1.5rem; background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%); border: 1px solid var(--border); border-radius: var(--r-xl); position: relative; overflow: hidden;">
+        <!-- Decorative accent glow -->
+        <div style="position:absolute;top:-60px;left:50%;transform:translateX(-50%);width:300px;height:150px;background:radial-gradient(ellipse, var(--accent-glow) 0%, transparent 70%);pointer-events:none;"></div>
+        <div style="position:absolute;bottom:-20px;right:-20px;width:120px;height:120px;background:radial-gradient(circle, var(--accent-dim) 0%, transparent 70%);pointer-events:none;"></div>
+
+        <div style="font-family:var(--font-head);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.12em;color:var(--accent);margin-bottom:0.6rem;">
+            Ready to lift?
         </div>
-        {% endfor %}
+        <h2 style="font-family:var(--font-head);font-size:1.8rem;font-weight:800;color:var(--text);letter-spacing:-0.03em;margin-bottom:0.4rem;">
+            Start Workout
+        </h2>
+        <p style="color:var(--text-3);font-size:0.88rem;margin-bottom:1.5rem;max-width:300px;margin-left:auto;margin-right:auto;">
+            {% if last_workout and last_workout.days_str %}Last: {{ last_workout.days_str }}{% if last_workout.exercises %} — {{ last_workout.exercises|join(', ') }}{% endif %}{% else %}Let's get after it{% endif %}
+        </p>
+        <form action="/session/start" method="POST" style="display:flex;justify-content:center;">
+            <button type="submit" class="btn btn-block" style="max-width:320px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Start Workout
+            </button>
+        </form>
     </div>
 </div>
-{% endif %}
-
-<!-- Volume Trend Chart -->
-{% if has_enough_data %}
-<div style="margin-bottom: 2rem;">
-    <div class="section-label">Volume Trend (8 weeks)</div>
-    <div class="chart-wrap" style="padding: 0.75rem;">
-        <canvas id="volumeChart" height="120"></canvas>
-    </div>
-</div>
-{% endif %}
-
-<!-- Last Workout Recap -->
-{% if active_session and last_workout %}
-<div style="margin-bottom: 0.75rem;">
-    <div class="recap-label">Last workout: <strong>{{ last_workout.days_str }}</strong>{% if last_workout.exercises %} — {{ last_workout.exercises|join(', ') }}{% endif %}</div>
-</div>
-{% endif %}
 
 <!-- Templates -->
 {% if templates %}
-<div style="margin-bottom: 1.5rem;">
-    <div class="section-label" style="margin-bottom:0.75rem;">Templates</div>
+<div style="margin-bottom: 2rem;">
+    <div class="section-label">Templates</div>
     <div style="display:flex;flex-direction:column;gap:0.5rem;">
         {% for tpl in templates %}
-        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--border);border-radius:var(--r-md);padding:0.7rem 1rem;gap:0.75rem;">
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:0.8rem 1.1rem;gap:0.75rem;transition:border-color 0.15s,box-shadow 0.15s;" onmouseover="this.style.borderColor='var(--border-hi)';this.style.boxShadow='0 2px 12px rgba(0,0,0,0.3)'" onmouseout="this.style.borderColor='var(--border)';this.style.boxShadow='none'">
             <div>
-                <div style="font-size:0.88rem;font-weight:500;color:var(--text);">{{ tpl.name }}</div>
+                <div style="font-family:var(--font-head);font-size:0.92rem;font-weight:600;color:var(--text);">{{ tpl.name }}</div>
                 <div style="font-size:0.72rem;color:var(--text-3);margin-top:0.1rem;">{{ tpl.exercise_count }} exercise{{ 's' if tpl.exercise_count != 1 else '' }}</div>
             </div>
             <form action="/template/{{ tpl.id }}/start" method="POST" style="margin:0;flex-shrink:0;">
@@ -57,12 +49,36 @@
 </div>
 {% endif %}
 
-<!-- Start Workout -->
-<div style="margin-bottom: 2.25rem;">
-    <form action="/session/start" method="POST">
-        <button type="submit" class="btn btn-block">Start Workout</button>
-    </form>
+<!-- Volume Trend -->
+{% if has_enough_data %}
+<div style="margin-bottom: 2rem;">
+    <div class="section-label">Volume Trend</div>
+    <div class="chart-wrap" style="padding: 0.75rem;">
+        <canvas id="volumeChart" height="110"></canvas>
+    </div>
 </div>
+{% endif %}
+
+<!-- Recent PRs -->
+{% if recent_prs %}
+<div style="margin-bottom: 2rem;">
+    <div class="section-label">Recent PRs</div>
+    <div style="display:flex;flex-direction:column;gap:0.4rem;">
+        {% for pr in recent_prs %}
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:0.5rem 1rem;font-size:0.82rem;">
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="#e05040"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                <span style="font-weight:500;color:var(--text-2);">{{ pr.name }}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.75rem;">
+                <span style="font-family:var(--font-mono);color:var(--text-2);font-weight:500;">{{ pr.reps }}×{{ pr.weight|int }}lb</span>
+                <span style="color:var(--text-3);font-size:0.72rem;font-family:var(--font-mono);">{{ pr.date[5:] }}</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 
 <!-- Add Exercise -->
 <div style="margin-bottom: 2rem;">
@@ -78,15 +94,18 @@
                 {% for mg in muscle_groups %}<option value="{{ mg }}">{{ mg }}</option>{% endfor %}
             </select>
         </div>
-        <button type="submit" class="btn">Add</button>
+        <button type="submit" class="btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add
+        </button>
     </form>
 </div>
 
 <!-- Muscle Group Recovery Heatmap -->
 {% if muscle_last_hit %}
-<div style="margin-bottom: 1.5rem;">
-    <div class="section-label">This Week's Muscles</div>
-    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
+<div style="margin-bottom: 2rem;">
+    <div class="section-label">This Week</div>
+    <div style="display:flex;flex-wrap:wrap;gap:0.45rem;">
         {% for mg in muscle_groups %}
             {% if mg in muscle_last_hit %}
                 {% set last_date = muscle_last_hit[mg] %}
@@ -101,8 +120,8 @@
                     {% set dot_color = '#f87171' %}
                     {% set dot_title = 'Last hit ' + last_date.strftime('%b %d') %}
                 {% endif %}
-                <span style="display:inline-flex;align-items:center;gap:0.35rem;background:var(--card);border:1px solid var(--border);border-radius:999px;padding:0.25rem 0.65rem;font-size:0.75rem;color:var(--text-2);" title="{{ dot_title }}">
-                    <span style="width:7px;height:7px;border-radius:50%;background:{{ dot_color }};flex-shrink:0;"></span>
+                <span style="display:inline-flex;align-items:center;gap:0.35rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-pill);padding:0.3rem 0.7rem;font-size:0.75rem;color:var(--text-2);cursor:default;" title="{{ dot_title }}">
+                    <span style="width:7px;height:7px;border-radius:50%;background:{{ dot_color }};flex-shrink:0;box-shadow:0 0 6px {{ dot_color }}40;"></span>
                     {{ mg }}
                 </span>
             {% endif %}
@@ -113,37 +132,43 @@
 
 <!-- Exercise Library -->
 <div>
-    <div class="section-label"><span id="exerciseCountLabel">{{ exercises|length }}</span> Exercise{{ 's' if exercises|length != 1 else '' }}</div>
+    <div class="section-label">
+        <span id="exerciseCountLabel">{{ exercises|length }}</span> Exercise{{ 's' if exercises|length != 1 else '' }}
+    </div>
     <div style="margin-bottom:0.75rem;">
-        <input type="text" id="exerciseSearch" placeholder="Filter exercises..." style="width:100%;padding:0.5rem 0.75rem;background:var(--card);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:var(--font);font-size:0.88rem;outline:none;box-sizing:border-box;">
+        <input type="text" id="exerciseSearch" placeholder="Filter exercises..." style="width:100%;padding:0.55rem 0.85rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);color:var(--text);font-family:var(--font-body);font-size:0.88rem;outline:none;box-sizing:border-box;transition:border-color 0.15s,box-shadow 0.15s;" onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 3px var(--accent-dim)'" onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'">
     </div>
     {% if exercises %}
     <ul class="exercise-list" id="exerciseList">
         {% for ex in exercises %}
         <li class="exercise-row" data-name="{{ ex.name.lower() }}">
             <button class="star-btn" onclick="toggleFavorite('{{ ex.id }}', this)" title="{{ 'Remove from favorites' if ex.is_favorite else 'Add to favorites' }}">
-                {{ '★' if ex.is_favorite else '☆' }}
+                {% if ex.is_favorite %}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#e8b84a" stroke="#e8b84a" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                {% else %}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                {% endif %}
             </button>
             <div class="exercise-info">
                 {% if active_session %}
                 <div class="exercise-name">{{ ex.name }}</div>
                 {% else %}
-                <a href="#" onclick="showProgress('{{ ex.id }}', '{{ ex.name | e }}'); return false;" class="exercise-name" style="text-decoration:none; cursor:pointer;">{{ ex.name }}</a>
+                <a href="#" onclick="showProgress('{{ ex.id }}', '{{ ex.name | e }}'); return false;" class="exercise-name" style="text-decoration:none;cursor:pointer;">{{ ex.name }}</a>
                 {% endif %}
                 <div class="exercise-meta">
                     <span class="mono" style="font-size:0.72rem;">{{ ex.times_used }}×</span>
                     {% if ex.last_used %}<span>·</span><span>{{ ex.last_used }}</span>{% endif %}
-                    {% if ex.best_weight %}<span>·</span><span>Best: <strong style="color:var(--text-2);font-weight:500;">{{ ex.best_weight }}lb</strong></span>{% endif %}
+                    {% if ex.best_weight %}<span>·</span><span>Best: <strong>{{ ex.best_weight }}lb</strong></span>{% endif %}
                 </div>
             </div>
-            <div style="display:flex;align-items:center;gap:0.5rem;">
+            <div style="display:flex;align-items:center;gap:0.4rem;">
                 <button class="diff-badge diff-{{ ex.difficulty or 'intermediate' }}" onclick="toggleDifficulty('{{ ex.id }}', this)" title="Difficulty: {{ ex.difficulty or 'intermediate' }} (click to change)">
                     {{ (ex.difficulty or 'intermediate')[:1]|upper }}
                 </button>
                 {% if ex.muscle_group %}<span class="muscle-badge">{{ ex.muscle_group }}</span>{% endif %}
                 {% if not active_session %}
                 <form action="/session/start" method="POST" style="margin:0;">
-                    <button type="submit" class="btn btn-sm">+</button>
+                    <button type="submit" class="btn btn-sm" style="padding:0.3rem 0.6rem;">+</button>
                 </form>
                 {% endif %}
             </div>
@@ -157,7 +182,7 @@
 
 <!-- Reset -->
 {% if exercises|length > 0 %}
-<div style="text-align:center; margin-top:2rem; padding-top:1.5rem; border-top:1px solid var(--border);">
+<div style="text-align:center; margin-top:2.5rem; padding-top:1.5rem; border-top:1px solid var(--border);">
     <form action="/reset" method="POST" onsubmit="return confirm('Reset ALL data? This cannot be undone.');">
         <button type="submit" class="btn btn-ghost btn-sm">Reset All Data</button>
     </form>
@@ -165,9 +190,11 @@
 {% endif %}
 
 <!-- Progress Modal -->
-<div class="modal-overlay" id="progressModal">
+<div class="modal-overlay" id="progressModal" onclick="if(event.target===this)this.classList.remove('show')">
     <div class="modal">
-        <button class="modal-close" onclick="closeModal()">✕</button>
+        <button class="modal-close" onclick="closeModal()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
         <h3 id="modalTitle">Progress</h3>
         <div class="chart-wrap">
             <canvas id="progressChart" height="180"></canvas>
@@ -176,6 +203,7 @@
 </div>
 
 <script>
+// ── Autocomplete ────────────────────────────────────────────────────────────
 const input = document.getElementById('exerciseInput');
 const list = document.getElementById('autocomplete');
 let timeout = null;
@@ -196,8 +224,8 @@ input.addEventListener('input', () => {
         data.forEach(ex => {
             const div = document.createElement('div');
             div.className = 'autocomplete-item';
-            const mg = ex.muscle_group ? `<small>\${ex.muscle_group}</small>` : '';
-            const best = ex.best_weight ? `<small>\${ex.best_weight}lb</small>` : '';
+            const mg = ex.muscle_group ? `<small>${ex.muscle_group}</small>` : '';
+            const best = ex.best_weight ? `<small>${ex.best_weight}lb</small>` : '';
             div.innerHTML = `<span>${ex.name}</span>${mg}${best}`;
             div.addEventListener('click', () => {
                 input.value = ex.name;
@@ -214,6 +242,7 @@ document.addEventListener('click', e => {
     if (!e.target.closest('.autocomplete')) list.classList.remove('show');
 });
 
+// ── Progress Chart ──────────────────────────────────────────────────────────
 let chart = null;
 async function showProgress(exerciseId, name) {
     document.getElementById('modalTitle').textContent = name;
@@ -241,13 +270,13 @@ async function showProgress(exerciseId, name) {
                 {
                     label: 'Weight (lb)',
                     data: weights,
-                    borderColor: '#e8652a',
-                    backgroundColor: 'rgba(232,101,42,0.06)',
+                    borderColor: '#e8b84a',
+                    backgroundColor: 'rgba(232,184,74,0.07)',
                     fill: true,
                     tension: 0.4,
                     pointRadius: 4,
-                    pointBackgroundColor: '#e8652a',
-                    pointBorderColor: '#18181d',
+                    pointBackgroundColor: '#e8b84a',
+                    pointBorderColor: '#0f0f0f',
                     borderWidth: 2,
                     yAxisID: 'y',
                 },
@@ -260,9 +289,9 @@ async function showProgress(exerciseId, name) {
                     tension: 0.4,
                     pointRadius: 3,
                     pointBackgroundColor: '#4ade80',
-                    pointBorderColor: '#18181d',
+                    pointBorderColor: '#0f0f0f',
                     borderWidth: 2,
-                    borderDash: [4, 3],
+                    borderDash: [5, 3],
                     yAxisID: 'y1',
                 }
             ]
@@ -271,35 +300,33 @@ async function showProgress(exerciseId, name) {
             responsive: true,
             scales: {
                 y: {
-                    type: 'linear',
-                    position: 'left',
-                    grid: { color: '#232329' },
-                    ticks: { color: '#50505e', font: { family: "'Fira Code'", size: 11 } },
-                    title: { display: true, text: 'lb', color: '#50505e', font: { size: 10 } }
+                    type: 'linear', position: 'left',
+                    grid: { color: '#1e1b18' },
+                    ticks: { color: '#605850', font: { family: "'DM Mono'", size: 11 } },
+                    title: { display: true, text: 'lb', color: '#605850', font: { size: 10 } }
                 },
                 y1: {
-                    type: 'linear',
-                    position: 'right',
+                    type: 'linear', position: 'right',
                     grid: { drawOnChartArea: false },
-                    ticks: { color: '#4ade80', font: { family: "'Fira Code'", size: 11 } },
+                    ticks: { color: '#4ade80', font: { family: "'DM Mono'", size: 11 } },
                     title: { display: true, text: 'sec', color: '#4ade80', font: { size: 10 } },
                 },
                 x: {
-                    grid: { color: '#232329' },
-                    ticks: { color: '#50505e', font: { family: "'Fira Code'", size: 11 } }
+                    grid: { color: '#1e1b18' },
+                    ticks: { color: '#605850', font: { family: "'DM Mono'", size: 11 } }
                 }
             },
             plugins: {
                 legend: {
                     display: true,
-                    labels: { color: '#8a8a99', font: { family: "'Fira Code'", size: 11 }, boxWidth: 12, boxHeight: 2 }
+                    labels: { color: '#a09888', font: { family: "'DM Mono'", size: 11 }, boxWidth: 12, boxHeight: 2 }
                 },
                 tooltip: {
-                    backgroundColor: '#18181d',
-                    borderColor: '#232329',
+                    backgroundColor: '#161412',
+                    borderColor: '#2a2520',
                     borderWidth: 1,
-                    titleColor: '#ececf0',
-                    bodyColor: '#8a8a99',
+                    titleColor: '#f5f0e8',
+                    bodyColor: '#a09888',
                     padding: 10,
                 }
             }
@@ -310,41 +337,11 @@ async function showProgress(exerciseId, name) {
 function closeModal() { document.getElementById('progressModal').classList.remove('show'); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
-async function toggleFavorite(exerciseId, btn) {
-    try {
-        const res = await fetch(`/exercise/${exerciseId}/favorite`, { method: 'POST' });
-        const data = await res.json();
-        if (data.is_favorite) {
-            btn.textContent = '★';
-            btn.title = 'Remove from favorites';
-        } else {
-            btn.textContent = '☆';
-            btn.title = 'Add to favorites';
-        }
-    } catch (e) { console.error('Failed to toggle favorite', e); }
-}
-
-async function toggleDifficulty(exerciseId, btn) {
-    try {
-        const res = await fetch(`/exercise/${exerciseId}/difficulty`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
-        });
-        const data = await res.json();
-        const diff = data.difficulty || 'intermediate';
-        btn.textContent = diff[0].toUpperCase();
-        btn.className = `diff-badge diff-${diff}`;
-        btn.title = `Difficulty: ${diff} (click to change)`;
-    } catch (e) { console.error('Failed to toggle difficulty', e); }
-}
-
-// Volume trend chart
+// ── Volume Trend Chart ─────────────────────────────────────────────────────
 (function() {
     const labels = {{ week_labels | tojson }};
     const volumes = {{ week_volumes | tojson }};
     if (!labels.length) return;
-
     const ctx = document.getElementById('volumeChart');
     if (!ctx) return;
 
@@ -355,13 +352,13 @@ async function toggleDifficulty(exerciseId, btn) {
             datasets: [{
                 label: 'Volume (lb)',
                 data: volumes,
-                borderColor: '#e8652a',
-                backgroundColor: 'rgba(232,101,42,0.08)',
+                borderColor: '#e8b84a',
+                backgroundColor: 'rgba(232,184,74,0.08)',
                 fill: true,
                 tension: 0.4,
                 pointRadius: 3,
-                pointBackgroundColor: '#e8652a',
-                pointBorderColor: '#18181d',
+                pointBackgroundColor: '#e8b84a',
+                pointBorderColor: '#0f0f0f',
                 borderWidth: 2,
             }]
         },
@@ -369,22 +366,22 @@ async function toggleDifficulty(exerciseId, btn) {
             responsive: true,
             scales: {
                 y: {
-                    grid: { color: '#232329' },
-                    ticks: { color: '#50505e', font: { family: "'Fira Code'", size: 10 } }
+                    grid: { color: '#1e1b18' },
+                    ticks: { color: '#605850', font: { family: "'DM Mono'", size: 10 } }
                 },
                 x: {
-                    grid: { color: '#232329' },
-                    ticks: { color: '#50505e', font: { family: "'Fira Code'", size: 10 } }
+                    grid: { color: '#1e1b18' },
+                    ticks: { color: '#605850', font: { family: "'DM Mono'", size: 10 } }
                 }
             },
             plugins: {
                 legend: { display: false },
                 tooltip: {
-                    backgroundColor: '#18181d',
-                    borderColor: '#232329',
+                    backgroundColor: '#161412',
+                    borderColor: '#2a2520',
                     borderWidth: 1,
-                    titleColor: '#ececf0',
-                    bodyColor: '#8a8a99',
+                    titleColor: '#f5f0e8',
+                    bodyColor: '#a09888',
                     padding: 10,
                     callbacks: {
                         label: ctx => `${ctx.parsed.y.toLocaleString()} lb`
@@ -395,7 +392,7 @@ async function toggleDifficulty(exerciseId, btn) {
     });
 })();
 
-// Exercise search with fuzzy matching
+// ── Exercise Search ─────────────────────────────────────────────────────────
 (function() {
     const searchInput = document.getElementById('exerciseSearch');
     const list = document.getElementById('exerciseList');
@@ -405,9 +402,7 @@ async function toggleDifficulty(exerciseId, btn) {
     function fuzzyMatch(name, query) {
         name = name.toLowerCase();
         query = query.toLowerCase();
-        // Simple substring match
         if (name.includes(query)) return true;
-        // Fuzzy: allow gaps and character-wise match
         let ni = 0;
         for (const ch of query) {
             const idx = name.indexOf(ch, ni);
@@ -430,48 +425,71 @@ async function toggleDifficulty(exerciseId, btn) {
         if (countLabel) countLabel.textContent = visible;
     });
 })();
+
+// ── Favorite Toggle ─────────────────────────────────────────────────────────
+async function toggleFavorite(exerciseId, btn) {
+    try {
+        const res = await fetch(`/exercise/${exerciseId}/favorite`, { method: 'POST' });
+        const data = await res.json();
+        if (data.is_favorite) {
+            btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="#e8b84a" stroke="#e8b84a" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
+            btn.title = 'Remove from favorites';
+        } else {
+            btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
+            btn.title = 'Add to favorites';
+        }
+    } catch (e) { console.error('Failed to toggle favorite', e); }
+}
+
+// ── Difficulty Toggle ───────────────────────────────────────────────────────
+async function toggleDifficulty(exerciseId, btn) {
+    try {
+        const res = await fetch(`/exercise/${exerciseId}/difficulty`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const data = await res.json();
+        const diff = data.difficulty || 'intermediate';
+        btn.textContent = diff[0].toUpperCase();
+        btn.className = `diff-badge diff-${diff}`;
+        btn.title = `Difficulty: ${diff} (click to change)`;
+    } catch (e) { console.error('Failed to toggle difficulty', e); }
+}
 </script>
 
 <style>
-.recap-label {
-    font-size: 0.78rem;
-    color: var(--text-3);
-    text-align: center;
-}
-.recap-label strong { color: var(--text-2); font-weight: 500; }
-
 .star-btn {
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 1.1rem;
     color: var(--text-3);
     padding: 0.2rem 0.3rem 0.2rem 0;
     flex-shrink: 0;
-    transition: color 0.15s;
+    transition: color 0.15s, transform 0.15s;
     line-height: 1;
+    display: flex;
+    align-items: center;
 }
-
-.star-btn:hover { color: var(--gold); }
-.star-btn[title="Remove from favorites"] { color: var(--gold); }
+.star-btn:hover { color: var(--accent); transform: scale(1.15); }
+.star-btn[title="Remove from favorites"] { color: var(--accent); }
 
 .diff-badge {
     background: none;
     border: 1px solid var(--border-hi);
     border-radius: 4px;
     font-size: 0.65rem;
-    font-weight: 600;
+    font-weight: 700;
     padding: 0.1rem 0.35rem;
     cursor: pointer;
     font-family: var(--font-mono);
     line-height: 1.4;
     transition: border-color 0.15s, color 0.15s;
-    letter-spacing: 0;
 }
-.diff-badge:hover { border-color: var(--orange); color: var(--orange); }
-.diff-beginner { color: #4ade80; border-color: #4ade80; }
-.diff-intermediate { color: var(--orange); border-color: var(--orange); opacity: 0.7; }
-.diff-advanced { color: #f87171; border-color: #f87171; }
+.diff-badge:hover { border-color: var(--accent); color: var(--accent); }
+.diff-beginner { color: #4ade80; border-color: rgba(74,222,128,0.4); }
+.diff-intermediate { color: var(--accent); border-color: rgba(232,184,74,0.4); }
+.diff-advanced { color: #f87171; border-color: rgba(248,113,113,0.4); }
 </style>
 
 {% endblock %}
