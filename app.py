@@ -295,7 +295,9 @@ def api_progress(exercise_id):
     ''', (exercise_id,)).fetchall()
     return jsonify([dict(r) for r in rows])
 
+# Initialize database on startup
+with app.app_context():
+    init_db()
+
 if __name__ == '__main__':
-    with app.app_context():
-        init_db()
     app.run(debug=True, host='0.0.0.0', port=5000)
