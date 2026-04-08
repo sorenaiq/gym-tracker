@@ -4,132 +4,683 @@
 
 {% block content %}
 
-<!-- SUMMARY -->
+<!-- Summary -->
 {% if summary %}
 <div class="summary-row">
-    <div class="stat-pill"><span class="val">{{ summary.exercises }}</span> <span class="lbl">exercises</span></div>
-    <div class="stat-pill"><span class="val">{{ summary.sets }}</span> <span class="lbl">sets</span></div>
-    <div class="stat-pill"><span class="val">{{ summary.volume }}</span> <span class="lbl">lbs</span></div>
+    <div class="stat-pill">
+        <span class="val">{{ summary.exercises }}</span>
+        <span class="lbl">exercises</span>
+    </div>
+    <div class="stat-pill">
+        <span class="val">{{ summary.sets }}</span>
+        <span class="lbl">sets</span>
+    </div>
+    <div class="stat-pill">
+        <span class="val">{{ summary.volume|int }}</span>
+        <span class="lbl">lb</span>
+    </div>
     {% if summary.prs > 0 %}
-    <div class="stat-pill pr"><span class="val">🏆 {{ summary.prs }}</span> <span class="lbl">PRs</span></div>
+    <div class="stat-pill pr">
+        <span class="val">{{ summary.prs }}</span>
+        <span class="lbl">PR{{ 's' if summary.prs > 1 else '' }}</span>
+    </div>
     {% endif %}
-    <a href="/session/{{ session.id }}/summary" class="btn btn-ghost" style="border-radius:999px;padding:0.4rem 1rem;font-size:0.8rem;">📊 Summary</a>
+    <a href="/session/{{ session.id }}/summary" class="btn btn-ghost btn-sm">Summary</a>
 </div>
 {% endif %}
 
-<!-- WORKOUT HEADER -->
+{% if prev_session and exercises_data %}
+<div class="prev-session-compare" style="margin: 0.75rem 0 1rem;">
+    <div class="compare-header">vs last session <span style="color:var(--text-3);font-weight:400;">({{ prev_session.date }})</span></div>
+    <div class="compare-vol">
+        {% set vol_diff = summary.volume - prev_session.volume if summary else 0 %}
+        {% set vol_arrow = '↑' if vol_diff > 0 else ('↓' if vol_diff < 0 else '→') %}
+        {% set vol_pct = ((vol_diff / prev_session.volume * 100)|round|int) if prev_session.volume > 0 else 0 %}
+        <span class="vol-now">{{ summary.volume|int }}lb</span>
+        <span class="vol-arrow">{{ vol_arrow }} {{ vol_diff|abs|int }}lb</span>
+        <span class="vol-last">{{ prev_session.volume|int }}lb</span>
+    </div>
+</div>
+{% endif %}
+
+<!-- Workout Header -->
 <div class="workout-header">
-    <div style="font-size: 1.1rem; font-weight: 700;">Active Workout</div>
+    <div class="wh-title">Active Workout</div>
     <div class="date">{{ session.date }}</div>
+    <div class="timer-row">
+        <span class="timer-label">Duration</span>
+        <span id="workout-timer" class="timer-val">--:--</span>
+        <span id="workout-min" class="timer-min">0 min</span>
+    </div>
+    <input type="hidden" id="started-at" value="{{ session.started_at }}">
 </div>
 
-<!-- ADD EXERCISE -->
+<!-- Add Exercise -->
 <div style="margin-bottom: 2rem;">
     <div class="section-label">Add Exercise</div>
-    <form action="/session/{{ session.id }}/add_exercise" method="POST" class="input-row autocomplete">
+    <form action="/session/{{ session.id }}/add_exercise" method="POST" class="autocomplete" style="display:flex;gap:0.4rem;align-items:flex-end;">
         <div style="flex:2; position:relative;">
-            <input type="text" name="exercise_name" placeholder="Search or type exercise name..." id="exerciseInput" autocomplete="off">
+            <input type="text" name="exercise_name" placeholder="Search or create exercise..." id="exerciseInput" autocomplete="off">
             <div class="autocomplete-list" id="autocomplete"></div>
         </div>
         <div style="flex:1;">
             <select name="muscle_group" id="muscleGroupSelect">
-                <option value="">Muscle...</option>
+                <option value="">Muscle group</option>
                 {% for mg in muscle_groups %}<option value="{{ mg }}">{{ mg }}</option>{% endfor %}
+            </select>
+        </div>
+        <div style="flex:1;">
+            <select name="difficulty" id="difficultySelect">
+                <option value="">Difficulty</option>
+                <option value="beginner">Beginner</option>
+                <option value="intermediate" selected>Intermediate</option>
+                <option value="advanced">Advanced</option>
             </select>
         </div>
         <button type="submit" class="btn">Add</button>
     </form>
+    <!-- Muscle group suggestions -->
+    <div id="muscle-suggestions" style="display:none;margin-top:0.5rem;">
+        <div class="suggest-label">Popular in <span id="suggest-muscle"></span>:</div>
+        <div id="suggest-buttons" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.3rem;"></div>
+    </div>
 </div>
 
-<!-- EXERCISES -->
+<!-- Exercises -->
 {% if exercises_data %}
-    {% for ex in exercises_data %}
-    <div class="ex-block">
-        <div class="ex-header">
-            <div class="ex-name">
-                {{ ex.name }}
-                {% if ex.muscle_group %}<span class="muscle-badge">{{ ex.muscle_group }}</span>{% endif %}
-                {% if ex.note %}<span class="note-dot"></span>{% endif %}
+{% set ns = namespace(in_block=False) %}
+{% for ex in exercises_data %}
+{% set is_superset = ex.superset_group is not none %}
+{% set next_ex = exercises_data[loop.index] if loop.index < exercises_data|length else none %}
+{% set prev_ex = exercises_data[loop.index - 1] if loop.index > 0 else none %}
+{% set is_superset_start = is_superset and (not prev_ex or prev_ex.superset_group != ex.superset_group) %}
+{% set is_superset_end = is_superset and (not next_ex or next_ex.superset_group != ex.superset_group) %}
+{% if is_superset_start %}
+{% if ns.in_block %}</div><!-- /ex-block -->
+{% endif %}
+<div class="ex-block superset-container" draggable="true" data-se-id="{{ ex.se_id }}" ondragstart="handleDragStart(event)" ondragover="handleDragOver(event)" ondrop="handleDrop(event)" ondragend="handleDragEnd(event)">
+<div class="ex-order-num">{{ loop.index }}</div>
+{% set ns.in_block = True %}
+{% endif %}
+
+{% if not is_superset_start and not is_superset %}
+{% if ns.in_block %}</div><!-- /ex-block -->
+{% set ns.in_block = False %}
+{% endif %}
+<div class="ex-block" draggable="true" data-se-id="{{ ex.se_id }}" ondragstart="handleDragStart(event)" ondragover="handleDragOver(event)" ondrop="handleDrop(event)" ondragend="handleDragEnd(event)">
+<div class="ex-order-num">{{ loop.index }}</div>
+{% set ns.in_block = True %}
+{% endif %}
+
+        <div class="ex-card{% if is_superset %} superset-card{% endif %}">
+            <div class="ex-header">
+                <div class="drag-handle" title="Drag to reorder" onclick="event.stopPropagation()">⠿</div>
+                <div class="ex-name">
+                    {% if ex.is_bodyweight %}🏋️ {% endif %}{{ ex.name }}
+                    {% if ex.note %}<span class="note-dot"></span>{% endif %}
+                    <span class="diff-badge-sm diff-{{ ex.difficulty or 'intermediate' }}" onclick="toggleDifficultyEx({{ ex.eid }}, this)" title="Difficulty: {{ ex.difficulty or 'intermediate' }}">{{ (ex.difficulty or 'intermediate')[:1]|upper }}</span>
+                    {% if ex.is_bodyweight %}<span class="badge" style="margin-left:0.3rem;">BW</span>{% endif %}
+                </div>
+                <div class="ex-actions">
+                    {% if not is_superset %}
+                    <form action="/session/{{ session.id }}/exercise/{{ ex.se_id }}/superset" method="POST" style="margin:0;">
+                        <button type="submit" class="btn btn-note btn-sm" style="padding:0.3rem 0.55rem;font-size:0.72rem;" title="Pair with next exercise as superset">⚔️ Superset</button>
+                    </form>
+                    {% else %}
+                    <span class="superset-badge">⚔️ Superset</span>
+                    {% endif %}
+                    <form action="/exercise/{{ ex.eid }}/bodyweight" method="POST" style="margin:0;">
+                        <button type="submit" class="btn {% if ex.is_bodyweight %}btn-note has{% else %}btn-ghost btn-sm{% endif %}" style="padding:0.3rem 0.55rem;font-size:0.72rem;">🏋️ BW</button>
+                    </form>
+                    <button class="btn btn-note {% if ex.note %}has{% endif %} " onclick="toggleNote('{{ ex.se_id }}')">💬 Notes</button>
+                    <form action="/session/{{ session.id }}/remove_exercise/{{ ex.se_id }}" method="POST" onsubmit="return confirm('Remove {{ ex.name }}?');" style="margin:0;">
+                        <button type="submit" class="btn btn-ghost-red btn-sm" style="padding:0.3rem 0.55rem;">✕</button>
+                    </form>
+                </div>
             </div>
-            <div class="ex-actions">
-                <button class="btn btn-note {% if ex.note %}has{% endif %}" onclick="toggleNote('{{ ex.se_id }}')">📝 Note</button>
-                <form action="/session/{{ session.id }}/remove_exercise/{{ ex.se_id }}" method="POST" onsubmit="return confirm('Remove {{ ex.name }}?');" style="margin:0;">
-                    <button type="submit" class="btn btn-ghost-red">✕</button>
+
+            <!-- Notes thread -->
+            <div id="notes-thread-{{ ex.se_id }}" class="notes-thread" style="display:none;" data-note='{{ ex.note | tojson }}'></div>
+
+            <!-- Rest timer + presets -->
+            {% if ex.sets %}
+            <div class="rest-preset-row" id="rest-preset-row-{{ ex.se_id }}">
+                <div class="rest-preset-group" id="rest-preset-{{ ex.se_id }}" data-se="{{ ex.se_id }}" data-exercise="{{ ex.eid }}" data-target="{{ ex.rest_seconds }}" data-last-set="{{ ex.last_set_at or '' }}">
+                    <div class="rest-preset-buttons">
+                        <button type="button" class="preset-btn" data-sec="60">60s</button>
+                        <button type="button" class="preset-btn" data-sec="90">90s</button>
+                        <button type="button" class="preset-btn" data-sec="120">120s</button>
+                        <button type="button" class="preset-btn" data-sec="180">180s</button>
+                    </div>
+                    <div class="rest-countdown-pill" id="rest-pill-{{ ex.se_id }}" style="display:none;">
+                        <span class="rest-pill-label">Rest</span>
+                        <span class="rest-pill-time" id="rest-pill-time-{{ ex.se_id }}">--</span>
+                        <button type="button" class="rest-pill-skip" onclick="skipRestTimer('{{ ex.se_id }}')">Skip</button>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Notes area (collapsible) -->
+            <div id="note-area-{{ ex.se_id }}" style="display:none;" class="note-area">
+                <!-- Existing notes thread -->
+                <div id="notes-list-{{ ex.se_id }}" class="notes-list"></div>
+                <!-- Append new note -->
+                <form onsubmit="return appendNote('{{ ex.se_id }}', '{{ session.id }}')" style="margin-top:0.5rem;display:flex;gap:0.3rem;align-items:center;">
+                    <input type="text" id="note-append-input-{{ ex.se_id }}" placeholder="Add a note..." style="flex:1;font-size:0.8rem;">
+                    <button type="submit" class="btn btn-sm">Add</button>
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="toggleNote('{{ ex.se_id }}')">Done</button>
                 </form>
             </div>
-        </div>
 
-        <!-- Note area -->
-        <div id="note-area-{{ ex.se_id }}" style="display:none;" class="note-area">
-            <form action="/note/update" method="POST">
-                <input type="hidden" name="session_exercise_id" value="{{ ex.se_id }}">
-                <input type="hidden" name="session_id" value="{{ session.id }}">
-                <textarea name="note" rows="2" placeholder="Form cues, how it felt...">{{ ex.note or '' }}</textarea>
-                <div style="margin-top:0.5rem; display:flex;gap:0.4rem;">
-                    <button type="submit" class="btn btn-sm">Save</button>
-                    <button type="button" class="btn btn-ghost btn-sm" onclick="toggleNote('{{ ex.se_id }}')">Cancel</button>
-                </div>
-            </form>
-        </div>
-
-        {% if ex.note %}<div class="note-text-full">{{ ex.note }}</div>{% endif %}
-
-        <!-- Prev performance -->
-        {% if ex.prev_sets %}
-        <div class="prev-hint">Last session: {% for s in ex.prev_sets %}{{ s.reps }}×{{ s.weight }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
-        {% endif %}
-
-        <!-- PR hint -->
-        {% if ex.pr_weight %}
-        <div style="font-size:0.78rem;color:#5a5000;margin-bottom:0.5rem;">🏆 PR: {{ ex.pr_weight }}lbs best</div>
-        {% endif %}
-
-        <!-- Add set -->
-        <div class="log-set">
-            <form action="/set/add" method="POST" class="log-set-form">
-                <input type="hidden" name="session_exercise_id" value="{{ ex.se_id }}">
-                <input type="hidden" name="session_id" value="{{ session.id }}">
-                <input type="hidden" name="exercise_id" value="{{ ex.eid }}">
-                <input type="hidden" name="set_number" value="{{ ex.sets|length + 1 }}">
-                <div>
-                    <label>Reps</label>
-                    <input type="number" name="reps" min="1" placeholder="—" required>
-                </div>
-                <div>
-                    <label>Weight (lbs)</label>
-                    <input type="number" name="weight" step="0.5" min="0" placeholder="—" required>
-                </div>
-                <button type="submit" class="btn">Log Set</button>
-            </form>
-        </div>
-
-        <!-- Logged sets -->
-        {% for s in ex.sets %}
-        <div class="set-row">
-            <div class="set-label">Set {{ s.set_number }}{% if s.is_pr %}<span class="pr-badge">PR</span>{% endif %}</div>
-            <div class="set-values">
-                <div><span>reps</span><strong>{{ s.reps }}</strong></div>
-                <div><span>lbs</span><strong>{{ s.weight }}</strong></div>
+            <!-- Rest timer between exercises -->
+            {% if loop.index0 > 0 %}
+            <div class="rest-timer" id="rest-{{ ex.se_id }}">
+                <span class="rest-label">Rest since last:</span>
+                <span class="rest-time" id="rest-time-{{ ex.se_id }}">--:--</span>
+                <input type="hidden" class="added-at" value="{{ ex.added_at }}">
             </div>
-            <form action="/set/{{ s.id }}/delete" method="POST" style="margin:0;">
-                <button type="submit" class="btn btn-ghost-red" style="padding:0.3rem 0.5rem;font-size:0.75rem;">✕</button>
-            </form>
+            {% endif %}
+
+            <!-- Prev performance -->
+            {% if ex.prev_sets %}
+            <div class="prev-hint">
+                Last: {% for s in ex.prev_sets %}{% if ex.is_timed %}{{ s.duration_seconds }}s{% else %}{{ s.reps }}×{{ s.weight }}{% if s.rpe %} @RIR {{ s.rpe }}{% endif %}{% endif %}{% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- PR hint -->
+            {% if ex.pr_weight %}
+            <div style="font-size:0.75rem;color:var(--text-3);margin-bottom:0.4rem;">Best: <span style="color:var(--gold);font-weight:500;">{{ ex.pr_weight }}lb</span></div>
+            {% endif %}
+
+            <!-- Log Set -->
+            <div id="log-set-{{ ex.se_id }}">
+                <form action="/set/add" method="POST" class="log-set-form" id="form-{{ ex.se_id }}">
+                    <input type="hidden" name="session_exercise_id" value="{{ ex.se_id }}">
+                    <input type="hidden" name="session_id" value="{{ session.id }}">
+                    <input type="hidden" name="exercise_id" value="{{ ex.eid }}">
+                    <input type="hidden" name="set_number" value="{{ ex.sets|length + 1 }}">
+                    <input type="hidden" name="duration_seconds" id="duration-{{ ex.se_id }}" value="">
+
+                    {% if not ex.is_timed %}
+                    {% set rep_range = rep_ranges.get(ex.muscle_group, (8, 12)) %}
+                    <div class="set-input-group">
+                        <div class="rep-range-target">Target: {{ rep_range[0] }}-{{ rep_range[1] }} reps</div>
+                        <label>Reps</label>
+                        <div class="quick-fill-row">
+                            <button type="button" class="btn-qty" onclick="adjustReps('{{ ex.se_id }}', -1)">−</button>
+                            <input type="number" name="reps" id="reps-{{ ex.se_id }}" min="1" placeholder="—" required>
+                            <button type="button" class="btn-qty" onclick="adjustReps('{{ ex.se_id }}', 1)">+</button>
+                        </div>
+                    </div>
+                    {% if not ex.is_bodyweight %}
+                    <div class="set-input-group">
+                        <label>Weight (lb)</label>
+                        <div class="quick-fill-row">
+                            <button type="button" class="btn-qty" onclick="adjustWeight('{{ ex.se_id }}', -5)">−5</button>
+                            <input type="number" name="weight" id="weight-{{ ex.se_id }}" step="0.5" min="0" placeholder="—" required>
+                            <button type="button" class="btn-qty" onclick="adjustWeight('{{ ex.se_id }}', 5)">+5</button>
+                        </div>
+                        {% if ex.prev_sets and ex.prev_sets[0].weight %}
+                        <div class="weight-hint">Last: {{ ex.prev_sets[0].weight }}lb</div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    <div class="set-input-group">
+                        <label>RIR</label>
+                        <select name="rpe" id="rpe-{{ ex.se_id }}">
+                            <option value="">—</option>
+                            {% for r in [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5] %}
+                            <option value="{{ r }}">{{ r }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="btn">Log</button>
+                    {% if ex.sets|length > 0 %}
+                    <input type="hidden" id="last-set-id-{{ ex.se_id }}" value="{{ ex.sets[-1].id }}">
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="dropSet('{{ ex.se_id }}')" style="font-size:0.75rem;">+ Drop</button>
+                    {% endif %}
+                    <button type="button" class="btn btn-ghost btn-sm next-set-btn" id="next-set-btn-{{ ex.se_id }}" onclick="prefillNextSet('{{ ex.se_id }}')" style="display:none;font-size:0.75rem;">Next set →</button>
+                    {% else %}
+                    <div class="timed-ui" id="timed-ui-{{ ex.se_id }}">
+                        <span class="timer-display" id="timer-display-{{ ex.se_id }}">0:00</span>
+                        <button type="button" class="btn btn-sm" id="timer-start-{{ ex.se_id }}" onclick="startTimer('{{ ex.se_id }}')">Start</button>
+                        <button type="button" class="btn btn-ghost btn-sm" id="timer-stop-{{ ex.se_id }}" onclick="stopTimer('{{ ex.se_id }}')" style="display:none;">Stop</button>
+                        <button type="button" class="btn btn-ghost btn-sm" id="timer-reset-{{ ex.se_id }}" onclick="resetTimer('{{ ex.se_id }}')" style="display:none;">Reset</button>
+                        <div class="set-input-group" style="min-width:65px;">
+                            <label>RIR</label>
+                            <select name="rpe" id="rpe-{{ ex.se_id }}">
+                                <option value="">—</option>
+                                {% for r in [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5] %}
+                                <option value="{{ r }}">{{ r }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit" class="btn" id="timer-done-{{ ex.se_id }}" onclick="return doneTimer('{{ ex.se_id }}')" style="display:none;">Log</button>
+                    </div>
+                    {% endif %}
+                </form>
+
+                {% if ex.sets|length > 0 %}
+                <div class="copy-hint">
+                    {% if ex.is_timed %}
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="copyLastSet('{{ ex.se_id }}')"
+                        data-duration="{{ ex.sets[-1].duration_seconds }}"
+                        data-rpe="{{ ex.sets[-1].rpe or '' }}">
+                        Copy: {{ ex.sets[-1].duration_seconds }}s{% if ex.sets[-1].rpe %} @{{ ex.sets[-1].rpe }}{% endif %}
+                    </button>
+                    {% else %}
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="copyLastSet('{{ ex.se_id }}')"
+                        data-reps="{{ ex.sets[-1].reps }}"
+                        data-weight="{{ ex.sets[-1].weight }}"
+                        data-rpe="{{ ex.sets[-1].rpe or '' }}">
+                        Copy: {{ ex.sets[-1].reps }}×{{ ex.sets[-1].weight }}{% if ex.sets[-1].rpe %} @{{ ex.sets[-1].rpe }}{% endif %}
+                    </button>
+                    {% endif %}
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="showChart('{{ ex.eid }}', '{{ ex.name | e }}')">Progress</button>
+                </div>
+                {% endif %}
+            </div>
+        </div><!-- /ex-card -->
+{% if is_superset_end %}</div><!-- /ex-block superset-container -->
+{% set ns.in_block = False %}
+{% endif %}
+
+        <!-- Logged Sets -->
+        {% if ex.sets %}
+        <div style="margin-top: 0.1rem;">
+            {% for s in ex.sets %}
+            {% if s.parent_set_id %}
+            <div class="set-row" style="padding-left:1.25rem;font-size:0.82rem;border-bottom:1px solid var(--border);">
+                <div class="set-label" style="color:var(--text-3);">
+                    ↘ {{ s.set_number }}
+                </div>
+                <div class="set-values">
+                    <div><span>reps</span><strong>{{ s.reps }}</strong></div>
+                    <div><span>lb</span><strong>{{ s.weight }}</strong></div>
+                    {% if s.rpe %}<div><span>RIR</span><strong>{{ s.rpe }}</strong></div>{% endif %}
+                </div>
+                <form action="/set/{{ s.id }}/delete" method="POST" style="margin:0;">
+                    <button type="submit" class="btn btn-ghost-red btn-sm" style="padding:0.28rem 0.5rem;">✕</button>
+                </form>
+            </div>
+            {% else %}
+            <div class="set-row">
+                <div class="set-label">
+                    {{ s.set_number }}{% if s.is_pr %}<span class="pr-badge">🔥 PR</span>{% endif %}
+                    {% if ex.drop_set_counts.get(s.id) %}<span class="drop-set-count">↘ {{ ex.drop_set_counts[s.id] }} drop set{{ 's' if ex.drop_set_counts[s.id] > 1 else '' }}</span>{% endif %}
+                </div>
+                <div class="set-values">
+                    {% if s.duration_seconds %}
+                    <div><span>duration</span><strong>{{ s.duration_seconds }}s</strong></div>
+                    {% else %}
+                    <div><span>reps</span><strong>{{ s.reps }}</strong></div>
+                    <div><span>lb</span><strong>{{ s.weight }}</strong></div>
+                    {% endif %}
+                    {% if s.rpe %}<div><span>{{ 'RIR' if ex.prev_sets else 'RPE' }}</span><strong>{{ s.rpe }}</strong></div>{% endif %}
+                    {% if not s.duration_seconds and s.weight and s.reps %}<div class="set-1rm">{{ (s.weight * (1 + s.reps / 30)) | round(0) | int }}lb e1RM</div>{% endif %}
+                </div>
+                <form action="/set/{{ s.id }}/delete" method="POST" style="margin:0;">
+                    <button type="submit" class="btn btn-ghost-red btn-sm" style="padding:0.28rem 0.5rem;">✕</button>
+                </form>
+            </div>
+            {% endif %}
+            {% endfor %}
         </div>
-        {% endfor %}
-    </div>
-    {% endfor %}
+        {% endif %}
+
+    </div><!-- /ex-block -->
+{% endfor %}
+{% if ns.in_block %}</div><!-- /ex-block -->
+{% endif %}
 {% else %}
 <div class="empty">No exercises yet. Add one above.</div>
 {% endif %}
 
-<!-- END WORKOUT -->
+<!-- End Workout -->
 <div class="end-workout">
+    <!-- Tags row -->
+    <div class="tags-row" id="tags-row-{{ session.id }}" style="margin-bottom:0.75rem;display:flex;gap:0.4rem;align-items:center;justify-content:center;flex-wrap:wrap;">
+        <span style="font-size:0.78rem;color:var(--text-3);">Tags:</span>
+        <div id="session-tags-display" style="display:flex;gap:0.3rem;flex-wrap:wrap;"></div>
+        <input type="text" id="session-tags-input" placeholder="upper, lower, cardio…" style="max-width:180px;font-size:0.8rem;" onkeydown="if(event.key==='Enter'){event.preventDefault();saveSessionTags();}">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="saveSessionTags()">Save</button>
+    </div>
+    {% if exercises_data %}
+    <div style="margin-bottom:0.75rem;">
+        <form action="/session/{{ session.id }}/save-as-template" method="POST" style="display:flex;gap:0.4rem;align-items:center;justify-content:center;">
+            <input type="text" name="name" placeholder="Save as template…" style="flex:1;max-width:220px;">
+            <button type="submit" class="btn-ghost btn-sm">Save as Template</button>
+        </form>
+    </div>
+    {% endif %}
     <form action="/session/{{ session.id }}/end" method="POST">
-        <button type="submit" class="btn btn-start btn-block">✅ End Workout</button>
+        <button type="submit" class="btn btn-start btn-block">Finish Workout</button>
     </form>
 </div>
 
 <script>
+// ── Timers ──────────────────────────────────────────────────────────────────
+
+function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function formatTimerDisplay(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+window._timers = {};
+
+function startTimer(seId) {
+    const display = document.getElementById('timer-display-' + seId);
+    const startBtn = document.getElementById('timer-start-' + seId);
+    const stopBtn = document.getElementById('timer-stop-' + seId);
+    const resetBtn = document.getElementById('timer-reset-' + seId);
+    const doneBtn = document.getElementById('timer-done-' + seId);
+    if (window._timers[seId]) return;
+    const start = Date.now();
+    window._timers[seId] = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - start) / 1000);
+        display.textContent = formatTimerDisplay(elapsed);
+    }, 1000);
+    startBtn.style.display = 'none';
+    stopBtn.style.display = '';
+    resetBtn.style.display = '';
+    doneBtn.style.display = '';
+}
+
+function stopTimer(seId) {
+    clearInterval(window._timers[seId]);
+    window._timers[seId] = null;
+    document.getElementById('timer-start-' + seId).style.display = '';
+    document.getElementById('timer-stop-' + seId).style.display = 'none';
+}
+
+function resetTimer(seId) {
+    stopTimer(seId);
+    document.getElementById('timer-display-' + seId).textContent = '0:00';
+    document.getElementById('duration-' + seId).value = '';
+}
+
+function doneTimer(seId) {
+    const display = document.getElementById('timer-display-' + seId);
+    const text = display.textContent;
+    const parts = text.split(':');
+    const secs = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+    document.getElementById('duration-' + seId).value = secs;
+    if (window._timers[seId]) { clearInterval(window._timers[seId]); window._timers[seId] = null; }
+    document.getElementById('form-' + seId).submit();
+    return false;
+}
+
+// Workout duration
+const startedAt = document.getElementById('started-at')?.value;
+if (startedAt) {
+    const startMs = new Date(startedAt).getTime();
+    function tickTimer() {
+        const elapsed = Math.floor((Date.now() - startMs) / 1000);
+        document.getElementById('workout-timer').textContent = formatTime(elapsed);
+        const mins = Math.floor(elapsed / 60);
+        document.getElementById('workout-min').textContent = mins + ' min';
+    }
+    tickTimer();
+    setInterval(tickTimer, 1000);
+}
+
+// Rest countdown pill (smart rest timer)
+window._restTimers = {};
+
+function startRestPill(seId) {
+    const pill = document.getElementById('rest-pill-' + seId);
+    if (!pill) return;
+    const targetSec = parseInt(pill.dataset.target) || 90;
+    const lastSet = pill.dataset.lastSet;
+    if (!lastSet) return;
+
+    const startMs = new Date(lastSet).getTime();
+    const targetMs = startMs + targetSec * 1000;
+
+    pill.style.display = 'flex';
+
+    function tick() {
+        const remaining = Math.ceil((targetMs - Date.now()) / 1000);
+        const timeEl = document.getElementById('rest-pill-time-' + seId);
+        if (!timeEl) return;
+        if (remaining <= 0) {
+            timeEl.textContent = '0s';
+            pill.classList.add('flash');
+            // Record actual rest time taken
+            const actualSec = Math.round((Date.now() - startMs) / 1000);
+            fetch(`/api/exercise/${pill.dataset.exercise}/rest_time`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rest_seconds: actualSec })
+            });
+            if (window._restTimers[seId]) { clearInterval(window._restTimers[seId]); delete window._restTimers[seId]; }
+        } else {
+            timeEl.textContent = remaining + 's';
+        }
+    }
+    tick();
+    window._restTimers[seId] = setInterval(tick, 1000);
+}
+
+function skipRestTimer(seId) {
+    const pill = document.getElementById('rest-pill-' + seId);
+    if (!pill) return;
+    const targetSec = parseInt(pill.dataset.target) || 90;
+    const lastSet = pill.dataset.lastSet;
+    if (lastSet) {
+        const actualSec = Math.round((Date.now() - new Date(lastSet).getTime()) / 1000);
+        fetch(`/api/exercise/${pill.dataset.exercise}/rest_time`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rest_seconds: actualSec })
+        });
+    }
+    if (window._restTimers[seId]) { clearInterval(window._restTimers[seId]); delete window._restTimers[seId]; }
+    pill.style.display = 'none';
+}
+
+// Rest preset buttons
+document.querySelectorAll('.rest-preset-group').forEach(group => {
+    const seId = group.dataset.se;
+    const exerciseId = group.dataset.exercise;
+    const pill = document.getElementById('rest-pill-' + seId);
+    const exerciseName = exerciseId; // use ID for stable localStorage key
+
+    // Restore saved preset from localStorage
+    const saved = localStorage.getItem('rest_preset_' + exerciseName);
+    if (saved) {
+        const savedSec = parseInt(saved);
+        group.dataset.target = savedSec;
+        if (pill) pill.dataset.target = savedSec;
+    }
+
+    // Highlight active preset
+    const activeSec = parseInt(group.dataset.target) || 90;
+    group.querySelectorAll('.preset-btn').forEach(btn => {
+        if (parseInt(btn.dataset.sec) === activeSec) {
+            btn.classList.add('active');
+        }
+    });
+
+    // Click handler
+    group.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const sec = parseInt(btn.dataset.sec);
+            group.dataset.target = sec;
+            if (pill) pill.dataset.target = sec;
+            localStorage.setItem('rest_preset_' + exerciseName, sec);
+
+            // Highlight active
+            group.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Restart pill if already showing
+            if (pill && pill.style.display !== 'none') {
+                if (window._restTimers[seId]) {
+                    clearInterval(window._restTimers[seId]);
+                    delete window._restTimers[seId];
+                }
+                startRestPill(seId);
+            }
+        });
+    });
+});
+
+// Init all rest pills on page load
+document.querySelectorAll('.rest-countdown-pill').forEach(pill => {
+    startRestPill(pill.dataset.se);
+});
+
+// Show "Next set →" button if rest timer is still running
+function showNextSetButtons() {
+    document.querySelectorAll('.rest-countdown-pill').forEach(pill => {
+        const seId = pill.dataset.se;
+        const lastSet = pill.dataset.lastSet;
+        const targetSec = parseInt(pill.dataset.target) || 90;
+        if (!lastSet) return;
+        const targetMs = new Date(lastSet).getTime() + targetSec * 1000;
+        const btn = document.getElementById('next-set-btn-' + seId);
+        if (!btn) return;
+        if (Date.now() < targetMs) {
+            btn.style.display = '';
+        }
+    });
+}
+showNextSetButtons();
+setInterval(showNextSetButtons, 10000); // re-check every 10s
+
+// Rest timers (old style, between exercises)
+document.querySelectorAll('.rest-timer').forEach(el => {
+    const addedAt = el.querySelector('.added-at')?.value;
+    if (!addedAt) return;
+    const startMs = new Date(addedAt).getTime();
+    const seId = el.id.replace('rest-', '');
+    function tick() {
+        const elapsed = Math.floor((Date.now() - startMs) / 1000);
+        const display = document.getElementById('rest-time-' + seId);
+        if (display) display.textContent = formatTime(elapsed);
+    }
+    tick();
+    setInterval(tick, 1000);
+});
+
+// ── Copy + Adjust ────────────────────────────────────────────────────────────
+
+function copyLastSet(seId) {
+    const form = document.getElementById('form-' + seId);
+    const hintBtn = form?.parentElement.querySelector('.copy-hint button');
+    if (!hintBtn) return;
+    const reps = hintBtn.dataset.reps;
+    const weight = hintBtn.dataset.weight;
+    const duration = hintBtn.dataset.duration;
+    const rpe = hintBtn.dataset.rpe;
+    if (duration !== undefined) {
+        document.getElementById('duration-' + seId).value = duration || 0;
+        document.getElementById('timer-display-' + seId).textContent = formatTimerDisplay(parseInt(duration) || 0);
+        if (rpe) document.getElementById('rpe-' + seId).value = rpe;
+    } else {
+        const repsInput = document.getElementById('reps-' + seId);
+        const weightInput = document.getElementById('weight-' + seId);
+        const rpeInput = document.getElementById('rpe-' + seId);
+        if (repsInput && weightInput) {
+            repsInput.value = reps || '';
+            weightInput.value = weight || '';
+            if (rpe && rpeInput) rpeInput.value = rpe;
+        }
+    }
+}
+
+function prefillNextSet(seId) {
+    copyLastSet(seId);
+    // Scroll to the form for this exercise
+    const form = document.getElementById('form-' + seId);
+    if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function adjustReps(seId, delta) {
+    const input = document.getElementById('reps-' + seId);
+    const current = parseInt(input.value) || 0;
+    input.value = Math.max(1, current + delta);
+}
+
+function adjustWeight(seId, delta) {
+    const input = document.getElementById('weight-' + seId);
+    const current = parseFloat(input.value) || 0;
+    input.value = Math.max(0, current + delta);
+}
+
+// ── Minimalist set entry: Enter on weight/reps to quick-log via AJAX ────────
+document.querySelectorAll('.log-set-form').forEach(form => {
+    const seIdInput = form.querySelector('input[name="session_exercise_id"]');
+    if (!seIdInput) return;
+    const seId = seIdInput.value;
+
+    const repsInput = form.querySelector('input[name="reps"]');
+    const weightInput = form.querySelector('input[name="weight"]');
+    const rpeSelect = form.querySelector('select[name="rpe"]');
+
+    // Attach Enter handler on weight input (or reps if no weight)
+    const targetInput = weightInput || repsInput;
+    if (targetInput) {
+        targetInput.addEventListener('keydown', async (e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+
+            const repsVal = repsInput ? repsInput.value : '1';
+            if (!repsVal) return;
+
+            const fd = new FormData(form);
+
+            try {
+                await fetch('/set/add', { method: 'POST', body: fd });
+                window.location.reload();
+            } catch (err) {
+                console.error('Quick log failed', err);
+                form.submit();
+            }
+        });
+    }
+
+    // For timed exercises: Enter on RPE select also triggers log
+    if (rpeSelect && !weightInput && !repsInput) {
+        rpeSelect.addEventListener('keydown', async (e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            const fd = new FormData(form);
+            try {
+                await fetch('/set/add', { method: 'POST', body: fd });
+                window.location.reload();
+            } catch (err) {
+                console.error('Quick log failed', err);
+                form.submit();
+            }
+        });
+    }
+});
+
+function dropSet(seId) {
+    const lastSetIdInput = document.getElementById('last-set-id-' + seId);
+    if (!lastSetIdInput) return;
+    const setId = lastSetIdInput.value;
+    if (!setId) return;
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/set/' + setId + '/drop';
+    document.body.appendChild(form);
+    form.submit();
+}
+
+// ── Autocomplete ─────────────────────────────────────────────────────────────
+
 const input = document.getElementById('exerciseInput');
 const list = document.getElementById('autocomplete');
 const muscleSelect = document.getElementById('muscleGroupSelect');
@@ -144,16 +695,16 @@ input.addEventListener('input', () => {
         const data = await res.json();
         list.innerHTML = '';
         if (data.length === 0) {
-            list.innerHTML = `<div class="autocomplete-item" style="color:#444;font-style:italic;">+ Create new: ${input.value}</div>`;
+            list.innerHTML = `<div class="autocomplete-item" style="color:var(--text-3);font-style:italic;">+ Create new: ${input.value}</div>`;
             list.classList.add('show');
             return;
         }
         data.forEach(ex => {
             const div = document.createElement('div');
             div.className = 'autocomplete-item';
-            const mg = ex.muscle_group ? `<small>${ex.muscle_group}</small>` : '';
-            const best = ex.best_weight ? `<small>🏆 ${ex.best_weight}lbs</small>` : '';
-            div.innerHTML = `${ex.name}${mg}${best}`;
+            const mg = ex.muscle_group ? `<small>\${ex.muscle_group}</small>` : '';
+            const best = ex.best_weight ? `<small>\${ex.best_weight}lb</small>` : '';
+            div.innerHTML = `<span>${ex.name}</span>${mg}${best}`;
             div.addEventListener('click', () => {
                 input.value = ex.name;
                 if (ex.muscle_group && !muscleSelect.value) muscleSelect.value = ex.muscle_group;
@@ -169,11 +720,640 @@ document.addEventListener('click', e => {
     if (!e.target.closest('.autocomplete')) list.classList.remove('show');
 });
 
+function formatNoteTime(isoStr) {
+    try {
+        const d = new Date(isoStr);
+        return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    } catch {
+        return '';
+    }
+}
+
+function renderNotesThread(seId, noteRaw) {
+    const container = document.getElementById('notes-list-' + seId);
+    if (!container) return;
+    container.innerHTML = '';
+    if (!noteRaw) return;
+
+    let notes;
+    try {
+        notes = JSON.parse(noteRaw);
+        if (!Array.isArray(notes)) notes = [];
+    } catch {
+        // Legacy plain string — treat as single entry
+        notes = [{ text: noteRaw, timestamp: null }];
+    }
+
+    if (notes.length === 0) {
+        container.innerHTML = '<div style="font-size:0.78rem;color:var(--text-3);font-style:italic;">No notes yet.</div>';
+        return;
+    }
+
+    const ul = document.createElement('ul');
+    ul.className = 'notes-ul';
+    notes.forEach(n => {
+        const li = document.createElement('li');
+        li.className = 'note-entry';
+        const time = n.timestamp ? `<span class="note-time">${formatNoteTime(n.timestamp)}</span>` : '';
+        li.innerHTML = `${time}<span class="note-text">${escapeHtml(n.text)}</span>`;
+        ul.appendChild(li);
+    });
+    container.appendChild(ul);
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
 function toggleNote(id) {
     const el = document.getElementById('note-area-' + id);
     el.style.display = el.style.display === 'none' ? 'block' : 'none';
-    if (el.style.display === 'block') el.querySelector('textarea').focus();
+    if (el.style.display === 'block') {
+        const thread = document.getElementById('notes-thread-' + id);
+        const noteRaw = thread ? thread.dataset.note : null;
+        renderNotesThread(id, noteRaw);
+        const input = el.querySelector('input[type="text"]');
+        if (input) input.focus();
+    }
+}
+
+async function appendNote(seId, sessionId) {
+    const input = document.getElementById('note-append-input-' + seId);
+    const text = input ? input.value.trim() : '';
+    if (!text) return false;
+    try {
+        const res = await fetch(`/session/${sessionId}/exercise/${seId}/note/append`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note: text })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            // Update the thread data attribute and re-render
+            const thread = document.getElementById('notes-thread-' + seId);
+            if (thread) thread.dataset.note = JSON.stringify(data.notes);
+            renderNotesThread(seId, JSON.stringify(data.notes));
+            input.value = '';
+        }
+    } catch (err) {
+        console.error('Failed to append note', err);
+    }
+    return false;
+}
+
+// ── Progress Chart ─────────────────────────────────────────────────────────
+async function showChart(exerciseId, exerciseName) {
+    const modal = document.getElementById('chart-modal');
+    document.getElementById('chart-exercise-name').textContent = exerciseName;
+    modal.classList.add('show');
+
+    const canvas = document.getElementById('progress-chart');
+    if (window._progressChart) window._progressChart.destroy();
+
+    const res = await fetch(`/api/exercise/${exerciseId}/progress`);
+    const rows = await res.json();
+
+    if (rows.length === 0) {
+        document.getElementById('chart-placeholder').style.display = 'block';
+        canvas.style.display = 'none';
+        return;
+    }
+
+    document.getElementById('chart-placeholder').style.display = 'none';
+    canvas.style.display = 'block';
+
+    const byDate = {};
+    rows.forEach(r => {
+        if (!byDate[r.date] || r.weight * r.reps > byDate[r.date].weight * byDate[r.date].reps) {
+            byDate[r.date] = r;
+        }
+    });
+    const dates = Object.keys(byDate).sort();
+    const weights = dates.map(d => byDate[d].weight);
+    const repsList = dates.map(d => byDate[d].reps);
+
+    window._progressChart = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: dates.map(d => {
+                const dt = new Date(d + 'T00:00:00');
+                return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }),
+            datasets: [
+                {
+                    label: 'Weight (lb)',
+                    data: weights,
+                    borderColor: '#e8652a',
+                    backgroundColor: 'rgba(232,101,42,0.06)',
+                    tension: 0.35,
+                    yAxisID: 'y',
+                    spanGaps: true,
+                    borderWidth: 2,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#e8652a',
+                    pointBorderColor: '#18181d',
+                },
+                {
+                    label: 'Reps',
+                    data: repsList,
+                    borderColor: '#8a8a99',
+                    backgroundColor: 'rgba(138,138,153,0.05)',
+                    tension: 0.35,
+                    yAxisID: 'y1',
+                    spanGaps: true,
+                    borderWidth: 1.5,
+                    pointRadius: 3,
+                    pointBackgroundColor: '#8a8a99',
+                    pointBorderColor: '#18181d',
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    labels: { color: '#8a8a99', font: { family: "'Outfit'", size: 12 }, boxWidth: 12, padding: 14 }
+                },
+                tooltip: {
+                    backgroundColor: '#18181d',
+                    borderColor: '#232329',
+                    borderWidth: 1,
+                    titleColor: '#ececf0',
+                    bodyColor: '#8a8a99',
+                    padding: 10,
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label + ': ' + context.raw[context.dataset.label === 'Weight (lb)' ? 'weight' : 'reps'];
+                            if (context.dataset.label === 'Weight (lb)' && context.raw.weight && context.raw.reps) {
+                                const e1rm = Math.round(context.raw.weight * (1 + context.raw.reps / 30));
+                                label += '  |  ~' + e1rm + 'lb e1RM';
+                            }
+                            return label;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#50505e', font: { family: "'Fira Code'", size: 11 } },
+                    grid: { color: '#232329' }
+                },
+                y: {
+                    type: 'linear', display: true, position: 'left',
+                    title: { display: true, text: 'Weight', color: '#e8652a', font: { family: "'Outfit'", size: 11, weight: '500' } },
+                    ticks: { color: '#50505e', font: { family: "'Fira Code'", size: 11 } },
+                    grid: { color: '#232329' }
+                },
+                y1: {
+                    type: 'linear', display: true, position: 'right',
+                    title: { display: true, text: 'Reps', color: '#8a8a99', font: { family: "'Outfit'", size: 11, weight: '500' } },
+                    ticks: { color: '#50505e', font: { family: "'Fira Code'", size: 11 } },
+                    grid: { drawOnChartArea: false }
+                }
+            }
+        }
+    });
+}
+
+async function toggleDifficultyEx(exerciseId, btn) {
+    try {
+        const res = await fetch(`/exercise/${exerciseId}/difficulty`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const data = await res.json();
+        const diff = data.difficulty || 'intermediate';
+        btn.textContent = diff[0].toUpperCase();
+        btn.className = `diff-badge-sm diff-${diff}`;
+        btn.title = `Difficulty: ${diff}`;
+    } catch (e) { console.error('Failed to toggle difficulty', e); }
+}
+
+// ── Session Tags ──────────────────────────────────────────────────────────────
+const SESSION_ID = {{ session.id }};
+
+async function loadSessionTags() {
+    try {
+        const res = await fetch(`/session/${SESSION_ID}/tags`);
+        const data = await res.json();
+        renderTags(data.tags || []);
+    } catch (e) { /* ignore */ }
+}
+
+function renderTags(tags) {
+    const display = document.getElementById('session-tags-display');
+    display.innerHTML = '';
+    tags.forEach(tag => {
+        const span = document.createElement('span');
+        span.className = 'tag-pill';
+        span.textContent = tag;
+        display.appendChild(span);
+    });
+    // Also populate input field if non-empty
+    const input = document.getElementById('session-tags-input');
+    if (input && !input.dataset.manual) {
+        input.value = tags.join(', ');
+    }
+}
+
+async function saveSessionTags() {
+    const input = document.getElementById('session-tags-input');
+    const tagsStr = input ? input.value : '';
+    input.dataset.manual = 'true';
+    try {
+        const res = await fetch(`/session/${SESSION_ID}/tags`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tags: tagsStr })
+        });
+        const data = await res.json();
+        if (data.ok) renderTags(data.tags || []);
+    } catch (e) { console.error('Failed to save tags', e); }
+}
+
+loadSessionTags();
+
+// ── Muscle Group Suggestions ──────────────────────────────────────────────────
+const muscleSelect = document.getElementById('muscleGroupSelect');
+const suggestDiv = document.getElementById('muscle-suggestions');
+const suggestLabel = document.getElementById('suggest-muscle');
+const suggestBtns = document.getElementById('suggest-buttons');
+
+async function loadSuggestions(muscleGroup) {
+    if (!muscleGroup) {
+        suggestDiv.style.display = 'none';
+        return;
+    }
+    suggestLabel.textContent = muscleGroup;
+    suggestBtns.innerHTML = '';
+    const res = await fetch(`/api/suggested_exercises?muscle_group=${encodeURIComponent(muscleGroup)}`);
+    const data = await res.json();
+    if (data.length === 0) {
+        suggestDiv.style.display = 'none';
+        return;
+    }
+    data.forEach(ex => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-ghost btn-sm suggest-btn';
+        btn.textContent = ex.name;
+        btn.title = `Used ${ex.times_used}x`;
+        btn.addEventListener('click', () => {
+            const input = document.getElementById('exerciseInput');
+            input.value = ex.name;
+            if (muscleSelect && !muscleSelect.value) muscleSelect.value = muscleGroup;
+            suggestDiv.style.display = 'none';
+            // Auto-submit
+            input.closest('form').querySelector('button[type="submit"]').click();
+        });
+        suggestBtns.appendChild(btn);
+    });
+    suggestDiv.style.display = 'block';
+}
+
+muscleSelect.addEventListener('change', () => loadSuggestions(muscleSelect.value));
+
+// Also show suggestions when typing in the exercise field if a muscle group is already selected
+const exerciseInput = document.getElementById('exerciseInput');
+exerciseInput.addEventListener('input', () => {
+    // Only auto-suggest if muscle group is already picked
+    if (muscleSelect.value) loadSuggestions(muscleSelect.value);
+});
+
+// ── Drag to Reorder Exercises ────────────────────────────────────────────────
+let draggedEl = null;
+let draggedSeId = null;
+let draggedIndex = null;
+
+function handleDragStart(e) {
+    draggedEl = e.currentTarget;
+    draggedSeId = draggedEl.dataset.seId;
+    // Find index among siblings
+    const siblings = [...draggedEl.parentElement.children].filter(el => el.dataset.seId);
+    draggedIndex = siblings.indexOf(draggedEl);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', draggedSeId);
+    setTimeout(() => draggedEl.style.opacity = '0.4', 0);
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const target = e.currentTarget;
+    if (target === draggedEl) return;
+    // Show insertion indicator
+    const rect = target.getBoundingClientRect();
+    const mid = rect.left + rect.width / 2;
+    // Remove previous indicator
+    document.querySelectorAll('.drag-insert-before, .drag-insert-after').forEach(el => {
+        el.classList.remove('drag-insert-before', 'drag-insert-after');
+    });
+    if (e.clientX < mid) {
+        target.classList.add('drag-insert-before');
+    } else {
+        target.classList.add('drag-insert-after');
+    }
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    const target = e.currentTarget;
+    if (target === draggedEl) return;
+    const targetSeId = target.dataset.seId;
+    if (!draggedSeId || !targetSeId || draggedSeId === targetSeId) return;
+
+    // Determine position
+    const rect = target.getBoundingClientRect();
+    const insertBefore = e.clientX < rect.left + rect.width / 2;
+
+    // Send reorder request
+    const sessionId = {{ session.id }};
+    fetch(`/session/${sessionId}/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dragged_se_id: parseInt(draggedSeId), target_se_id: parseInt(targetSeId), insert_before: insertBefore })
+    }).then(r => r.json()).then(data => {
+        if (data.ok) window.location.reload();
+    }).catch(err => { console.error('Reorder failed', err); });
+}
+
+function handleDragEnd(e) {
+    draggedEl.style.opacity = '';
+    document.querySelectorAll('.drag-insert-before, .drag-insert-after').forEach(el => {
+        el.classList.remove('drag-insert-before', 'drag-insert-after');
+    });
+    draggedEl = null;
+    draggedSeId = null;
+    draggedIndex = null;
 }
 </script>
+
+<style>
+.superset-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+    position: relative;
+    margin-bottom: 0;
+}
+.superset-container::before {
+    content: '⚔️';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--surface);
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    z-index: 2;
+    box-shadow: 0 0 0 4px var(--surface);
+}
+.superset-card { border-color: var(--accent) !important; }
+.superset-badge {
+    font-size: 0.72rem;
+    color: var(--accent);
+    font-weight: 600;
+    padding: 0.2rem 0.4rem;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    white-space: nowrap;
+}
+.log-set-form { display: grid; grid-template-columns: 1fr 1fr 80px auto; gap: 0.4rem; align-items: end; }
+.rest-countdown-pill {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.3rem 0.7rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
+    width: fit-content;
+}
+.rest-pill-label { color: var(--text-3); font-weight: 500; }
+.rest-pill-time { color: var(--accent); font-family: var(--font-mono); font-weight: 600; min-width: 2.5rem; text-align: center; }
+.rest-pill-skip { background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 0.75rem; padding: 0; margin-left: 0.1rem; }
+.rest-pill-skip:hover { color: var(--text-2); }
+.rest-countdown-pill.flash {
+    animation: rest-flash 0.6s ease-in-out infinite alternate;
+    border-color: #e8652a;
+}
+.rest-countdown-pill.flash .rest-pill-time { color: #e8652a; }
+@keyframes rest-flash {
+    from { box-shadow: 0 0 0 0 rgba(232, 101, 42, 0); }
+    to   { box-shadow: 0 0 8px 3px rgba(232, 101, 42, 0.45); }
+}
+.preset-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-3);
+    font-size: 0.72rem;
+    padding: 0.2rem 0.55rem;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    font-family: var(--font);
+}
+.preset-btn:hover {
+    border-color: var(--orange);
+    color: var(--orange);
+}
+.preset-btn.active {
+    background: var(--orange);
+    border-color: var(--orange);
+    color: #fff;
+}
+.weight-hint {
+    font-size: 0.7rem;
+    color: var(--text-3);
+    margin-top: 0.15rem;
+    font-style: italic;
+}
+.rep-range-target {
+    font-size: 0.7rem;
+    color: var(--text-3);
+    margin-bottom: 0.1rem;
+    font-style: italic;
+}
+.timed-ui { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.timed-ui .set-input-group { min-width: 65px; flex-shrink: 0; }
+.timer-min {
+    font-size: 0.78rem;
+    color: var(--text-3);
+    font-family: var(--font-mono);
+    margin-left: 0.4rem;
+}
+.timer-display { font-size: 1.7rem; }
+.set-input-group { display: flex; flex-direction: column; gap: 0.1rem; }
+.drop-set-count {
+    font-size: 0.7rem;
+    color: var(--text-3);
+    font-weight: 400;
+    margin-left: 0.4rem;
+    font-style: italic;
+}
+.drag-handle {
+    cursor: grab;
+    color: var(--text-3);
+    font-size: 1rem;
+    margin-right: 0.4rem;
+    user-select: none;
+    flex-shrink: 0;
+    line-height: 1;
+}
+.drag-handle:active { cursor: grabbing; }
+.drag-insert-before { border-top: 2px solid var(--orange) !important; }
+.drag-insert-after { border-bottom: 2px solid var(--orange) !important; }
+.ex-order-num {
+    position: absolute;
+    top: -0.6rem;
+    left: 0.6rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    width: 1.2rem;
+    height: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.62rem;
+    color: var(--text-3);
+    font-family: var(--font-mono);
+    z-index: 2;
+    pointer-events: none;
+}
+.ex-block { position: relative; }
+.ex-block[draggable=true] { cursor: grab; }
+.prev-session-compare {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.82rem;
+}
+.compare-header {
+    font-weight: 600;
+    color: var(--text-2);
+    margin-bottom: 0.3rem;
+    font-size: 0.78rem;
+}
+.compare-vol {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.vol-now {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--accent);
+}
+.vol-arrow {
+    font-family: var(--font-mono);
+    color: var(--text-3);
+    font-size: 0.78rem;
+}
+.vol-last {
+    font-family: var(--font-mono);
+    color: var(--text-3);
+    font-size: 0.78rem;
+}
+.copy-hint { margin-top: 0.45rem; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+.quick-fill-row { display: flex; align-items: center; gap: 0.2rem; }
+.quick-fill-row input { width: 66px; }
+.ex-note-tag {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-style: italic;
+    color: var(--text-3);
+    margin-top: 0.35rem;
+    padding: 0.1rem 0.45rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+.set-1rm {
+    font-size: 0.7rem;
+    color: var(--text-3);
+    font-family: var(--font-mono);
+    margin-top: 0.15rem;
+    opacity: 0.75;
+}
+.diff-badge-sm {
+    display: inline-block;
+    background: none;
+    border: 1px solid;
+    border-radius: 4px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 0.05rem 0.3rem;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    vertical-align: middle;
+    margin-left: 0.3rem;
+    line-height: 1.4;
+    transition: opacity 0.15s;
+}
+.diff-badge-sm:hover { opacity: 0.7; }
+.diff-beginner { color: #4ade80; border-color: #4ade80; }
+.diff-intermediate { color: var(--orange); border-color: var(--orange); opacity: 0.8; }
+.diff-advanced { color: #f87171; border-color: #f87171; }
+.suggest-label { font-size: 0.75rem; color: var(--text-3); font-style: italic; }
+.suggest-btn { font-size: 0.75rem !important; padding: 0.2rem 0.55rem !important; opacity: 0.8; }
+.suggest-btn:hover { opacity: 1; border-color: var(--orange); color: var(--orange); }
+.notes-thread { margin-bottom: 0.5rem; }
+.notes-list { margin-bottom: 0.4rem; }
+.notes-ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.note-entry {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    padding: 0.15rem 0;
+}
+.note-time {
+    color: var(--text-3);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    flex-shrink: 0;
+}
+.note-text { color: var(--text-2); }
+.tags-row { font-size: 0.8rem; }
+.tags-row .tag-pill {
+    font-size: 0.68rem;
+    padding: 0.1rem 0.4rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-3);
+    font-family: var(--font-mono);
+}
+</style>
+
+<!-- Chart Modal -->
+<div class="modal-overlay" id="chart-modal" onclick="if(event.target===this)this.classList.remove('show')">
+    <div class="modal" style="max-width:580px;">
+        <button class="modal-close" onclick="document.getElementById('chart-modal').classList.remove('show')">✕</button>
+        <h3 id="chart-exercise-name">Progress</h3>
+        <p id="chart-placeholder" style="display:none;color:var(--text-3);text-align:center;padding:2rem;font-size:0.875rem;">No data yet.</p>
+        <div class="chart-wrap"><canvas id="progress-chart"></canvas></div>
+    </div>
+</div>
 
 {% endblock %}
