@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html extends="base.html">
+{% block content %}
+<style>
+.hero-sessions { margin-bottom: 2rem; }
+.hero-sessions h2 { font-size: 1.2rem; margin-bottom: 1rem; color: var(--text); }
+.session-list { display: flex; flex-direction: column; gap: 0.75rem; }
+.session-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 1rem 1.25rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+.session-card:hover { border-color: var(--border-hi); }
+.session-info .sess-date { font-weight: 600; color: var(--text); font-size: 0.95rem; margin-bottom: 0.2rem; }
+.session-info .sess-meta { font-size: 0.8rem; color: var(--text-3); display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.session-info .sess-meta span { display: flex; align-items: center; gap: 0.25rem; }
+.session-info .sess-tag { display: inline-block; font-size: 0.68rem; padding: 0.1rem 0.45rem; border-radius: var(--r-pill); background: var(--surface-3); color: var(--text-3); }
+.session-actions { display: flex; gap: 0.5rem; }
+.btn-continue {
+    background: var(--accent);
+    color: #1a1200;
+    font-weight: 700;
+    border: none;
+    border-radius: var(--r-md);
+    padding: 0.5rem 1rem;
+    font-size: 0.82rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+.btn-continue:hover { background: var(--accent-hi); transform: translateY(-1px); }
+.btn-end {
+    background: var(--surface-3);
+    color: var(--text-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.btn-end:hover { border-color: var(--text-3); color: var(--text); }
+.old-badge { font-size: 0.68rem; padding: 0.15rem 0.4rem; border-radius: var(--r-sm); background: var(--surface-3); color: var(--text-3); }
+.empty-state { text-align: center; padding: 3rem 1rem; color: var(--text-3); }
+.empty-state p { margin-bottom: 1.5rem; }
+</style>
+
+<div class="hero-sessions">
+    <h2>Your Sessions</h2>
+
+    {% if active_sessions or recent_sessions %}
+    <div class="session-list">
+        {# Active / in-progress sessions #}
+        {% if active_sessions %}
+        <div style="margin-bottom: 1.5rem;">
+            <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-3);margin-bottom:0.6rem;font-weight:600;">In Progress</div>
+            {% for s in active_sessions %}
+            <div class="session-card">
+                <div class="session-info">
+                    <div class="sess-date">
+                        {% if s.is_today %}Today{% elif s.is_yesterday %}Yesterday{% else %}{{ s.date }}{% endif %}
+                        {% if s.exercise_count == 0 %}
+                            <span class="sess-tag">No exercises</span>
+                        {% else %}
+                            <span style="font-weight:400;color:var(--text-2);">{{ s.exercise_count }} exercise{{ 's' if s.exercise_count != 1 else '' }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="sess-meta">
+                        <span>⚔ {{ s.set_count }} sets</span>
+                        {% if s.duration %}· {{ s.duration }}{% endif %}
+                    </div>
+                </div>
+                <div class="session-actions">
+                    <form action="/session/{{ s.id }}/end" method="POST" onsubmit="return confirm('End this session without saving?');">
+                        <button type="submit" class="btn-end">Discard</button>
+                    </form>
+                    <a href="/session/{{ s.id }}" class="btn-continue">
+                        Resume
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {# Past sessions (ended) #}
+        {% if recent_sessions %}
+        <div>
+            <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-3);margin-bottom:0.6rem;font-weight:600;">Past Workouts</div>
+            {% for s in recent_sessions %}
+            <div class="session-card">
+                <div class="session-info">
+                    <div class="sess-date">
+                        {{ s.date }}
+                        <span style="font-weight:400;color:var(--text-2);">{{ s.exercise_count }} exercise{{ 's' if s.exercise_count != 1 else '' }}</span>
+                    </div>
+                    <div class="sess-meta">
+                        {% if s.prs > 0 %}<span style="color:var(--accent);">🏆 {{ s.prs }} PR{{ 's' if s.prs != 1 else '' }}</span>{% endif %}
+                        <span>⚔ {{ s.set_count }} sets</span>
+                        {% if s.volume %}<span>📦 {{ (s.volume/1000)|round(1) }}k lb</span>{% endif %}
+                        {% if s.duration %}· {{ s.duration }}{% endif %}
+                        {% if s.tags %}{% for t in s.tags %}<span class="sess-tag">{{ t }}</span>{% endfor %}{% endif %}
+                    </div>
+                </div>
+                <div class="session-actions">
+                    <a href="/session/{{ s.id }}/summary" class="btn-end" style="text-decoration:none;">View</a>
+                    <a href="/session/{{ s.id }}/copy" class="btn-end" title="Start a new session with the same exercises">Copy</a>
+                </div>
+            </div>
+            {% endfor %}
+            {% if history_count > 10 %}
+            <div style="text-align:center;margin-top:1rem;">
+                <a href="/history" style="color:var(--text-3);font-size:0.82rem;">View all {{ history_count }} workouts →</a>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    {% else %}
+    <div class="empty-state">
+        <p>No past workouts yet.</p>
+        <a href="/" class="btn">Start your first workout →</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

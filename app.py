@@ -656,8 +656,33 @@ def reorder_exercises(session_id):
 
 
 
-@app.route('/session/<int:session_id>/end', methods=['POST'])
-def end_workout(session_id):
+@app.route('/session/<int:session_id>/copy', methods=['POST'])
+def copy_session(session_id):
+    """Start a new session copying exercises from a past session."""
+    db = get_db()
+    old = db.execute('SELECT * FROM workout_sessions WHERE id = ?', (session_id,)).fetchone()
+    if not old:
+        return redirect(url_for('index'))
+    # Create new session with same tag, date=today
+    from datetime import date
+    new_id = db.execute(
+        'INSERT INTO workout_sessions (date, notes, tags, ended) VALUES (?, ?, ?, 0)',
+        (date.today().isoformat(), old['notes'], old['tags'])
+    ).lastrowid
+    db.commit()
+    # Copy all exercises from old session to new session
+    old_exercises = db.execute(
+        'SELECT * FROM session_exercises WHERE session_id = ? ORDER BY position',
+        (session_id,)
+    ).fetchall()
+    for ex in old_exercises:
+        new_se = db.execute(
+            'INSERT INTO session_exercises (session_id, exercise_id, position) VALUES (?, ?, ?)',
+            (new_id, ex['exercise_id'], ex['position'])
+        )
+        db.commit()
+    return redirect(url_for('workout', session_id=new_id))
+
     db = get_db()
     db.execute('UPDATE workout_sessions SET ended = 1 WHERE id = ?', (session_id,))
     db.commit()
@@ -803,6 +828,100 @@ def api_warmup():
         {'percent': 80, 'reps': 1,  'weight': round(w * 0.8, 1)},
     ]
     return jsonify(sets)
+
+@app.route('/sessions')
+def sessions_page():
+    """Show all sessions: active first, then past (ended)."""
+    import json
+    db = get_db()
+    today = date_module.today()
+
+    # Active sessions (ended = 0)
+    active_raw = db.execute('''
+        SELECT ws.*,
+               (SELECT COUNT(*) FROM session_exercises se WHERE se.session_id = ws.id) as exercise_count,
+               (SELECT COUNT(*) FROM sets s JOIN session_exercises se ON se.id = s.session_exercise_id WHERE se.session_id = ws.id) as set_count,
+               (SELECT SUM(s.reps * s.weight) FROM sets s JOIN session_exercises se ON se.id = s.session_exercise_id WHERE se.session_id = ws.id AND s.duration_seconds IS NULL) as volume
+        FROM workout_sessions ws
+        WHERE ws.ended = 0
+        ORDER BY ws.date DESC, ws.id DESC
+    ''').fetchall()
+
+    active_sessions = []
+    for s in active_raw:
+        sd = dict(s)
+        sess_date = date_module.fromisoformat(sd['date'])
+        delta = (today - sess_date).days
+        sd['is_today'] = (delta == 0)
+        sd['is_yesterday'] = (delta == 1)
+        if sd.get('tags'):
+            try: sd['tags'] = json.loads(sd['tags'])
+            except: sd['tags'] = []
+        else:
+            sd['tags'] = []
+        # Estimate duration from first to last set if available
+        first_set = db.execute('''
+            SELECT created_at FROM sets s JOIN session_exercises se ON se.id = s.session_exercise_id
+            WHERE se.session_id = ? ORDER BY s.created_at ASC LIMIT 1
+        ''', (sd['id'],)).fetchone()
+        last_set = db.execute('''
+            SELECT created_at FROM sets s JOIN session_exercises se ON se.id = s.session_exercise_id
+            WHERE se.session_id = ? ORDER BY s.created_at DESC LIMIT 1
+        ''', (sd['id'],)).fetchone()
+        if first_set and last_set:
+            start = datetime.fromisoformat(first_set['created_at'])
+            end = datetime.fromisoformat(last_set['created_at'])
+            dur = int((end - start).total_seconds() / 60)
+            sd['duration'] = f'{dur}min'
+        else:
+            sd['duration'] = None
+        active_sessions.append(sd)
+
+    # Recent past sessions (ended = 1), last 10
+    past_raw = db.execute('''
+        SELECT ws.*,
+               (SELECT COUNT(*) FROM session_exercises se WHERE se.session_id = ws.id) as exercise_count,
+               (SELECT COUNT(*) FROM sets s JOIN session_exercises se ON se.id = s.session_exercise_id WHERE se.session_id = ws.id) as set_count,
+               (SELECT SUM(s.reps * s.weight) FROM sets s JOIN session_exercises se ON se.id = s.session_exercise_id WHERE se.session_id = ws.id AND s.duration_seconds IS NULL) as volume,
+               (SELECT COUNT(*) FROM sets s JOIN session_exercises se ON se.id = s.session_exercise_id WHERE se.session_id = ws.id AND s.is_pr = 1) as prs
+        FROM workout_sessions ws
+        WHERE ws.ended = 1
+        ORDER BY ws.date DESC, ws.id DESC
+        LIMIT 10
+    ''').fetchall()
+
+    recent_sessions = []
+    for s in past_raw:
+        sd = dict(s)
+        if sd.get('tags'):
+            try: sd['tags'] = json.loads(sd['tags'])
+            except: sd['tags'] = []
+        else:
+            sd['tags'] = []
+        # Duration
+        first_set = db.execute('''
+            SELECT created_at FROM sets s JOIN session_exercises se ON se.id = s.session_exercise_id
+            WHERE se.session_id = ? ORDER BY s.created_at ASC LIMIT 1
+        ''', (sd['id'],)).fetchone()
+        last_set = db.execute('''
+            SELECT created_at FROM sets s JOIN session_exercises se ON se.id = s.session_exercise_id
+            WHERE se.session_id = ? ORDER BY s.created_at DESC LIMIT 1
+        ''', (sd['id'],)).fetchone()
+        if first_set and last_set:
+            start = datetime.fromisoformat(first_set['created_at'])
+            end = datetime.fromisoformat(last_set['created_at'])
+            dur = int((end - start).total_seconds() / 60)
+            sd['duration'] = f'{dur}min'
+        else:
+            sd['duration'] = None
+        recent_sessions.append(sd)
+
+    history_count = db.execute('SELECT COUNT(*) FROM workout_sessions WHERE ended = 1').fetchone()[0]
+
+    return render_template('sessions.html',
+        active_sessions=active_sessions,
+        recent_sessions=recent_sessions,
+        history_count=history_count)
 
 @app.route('/history')
 def workout_history():
