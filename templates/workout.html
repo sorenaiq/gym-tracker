@@ -135,7 +135,7 @@
             <!-- Prev performance -->
             {% if ex.prev_sets %}
             <div class="prev-hint">
-                Last: {% for s in ex.prev_sets %}{% if ex.is_timed %}{{ s.duration_seconds }}s{% else %}{{ s.reps }}×{{ s.weight }}{% if s.rpe %} @RIR {{ s.rpe }}{% endif %}{% endif %}{% endfor %}
+                Last: {% for s in ex.prev_sets %}{% if not loop.first %}<span class="set-sep">·</span>{% endif %}{% if ex.is_timed %}{{ s.duration_seconds }}s{% else %}{{ s.reps }}×{{ s.weight }}{% if s.rpe %} <span class="rir-mini">RIR {{ s.rpe }}</span>{% endif %}{% endif %}{% endfor %}
             </div>
             {% endif %}
 
@@ -157,8 +157,8 @@
 
                     {% if not ex.is_timed %}
                     {% set rep_range = rep_ranges.get(ex.muscle_group, (8, 12)) %}
+                    <div class="rep-range-target">Target: {{ rep_range[0] }}-{{ rep_range[1] }} reps</div>
                     <div class="set-input-group">
-                        <div class="rep-range-target">Target: {{ rep_range[0] }}-{{ rep_range[1] }} reps</div>
                         <label>Reps</label>
                         <div class="quick-fill-row">
                             <button type="button" class="btn-qty" onclick="adjustReps('{{ ex.se_id }}', -1)">
@@ -172,19 +172,19 @@
                     </div>
                     
                     <div class="set-input-group">
+                        {% if ex.prev_sets and ex.prev_sets[0].weight %}
+                        <div class="weight-hint">Last: {{ ex.prev_sets[0].weight }}lb</div>
+                        {% endif %}
                         <label>Weight (lb)</label>
                         <div class="quick-fill-row">
                             <button type="button" class="btn-qty" onclick="adjustWeight('{{ ex.se_id }}', -5)">−5</button>
                             <input type="number" name="weight" id="weight-{{ ex.se_id }}" step="0.5" min="0" placeholder="—" required>
                             <button type="button" class="btn-qty" onclick="adjustWeight('{{ ex.se_id }}', 5)">+5</button>
                         </div>
-                        {% if ex.prev_sets and ex.prev_sets[0].weight %}
-                        <div class="weight-hint">Last: {{ ex.prev_sets[0].weight }}lb</div>
-                        {% endif %}
                     </div>
-                    <div class="set-input-group">
+                    <div class="set-input-group rir-group">
                         <label>RIR</label>
-                        <select name="rpe" id="rpe-{{ ex.se_id }}">
+                        <select name="rpe" id="rpe-{{ ex.se_id }}" class="rir-select">
                             <option value="">—</option>
                             {% for r in [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5] %}
                             <option value="{{ r }}">{{ r }}</option>
@@ -674,8 +674,12 @@ function handleDragEnd(e) {
     flex-shrink: 0;
 }
 .btn-qty:hover { border-color: var(--accent); color: var(--accent); }
-.weight-hint { font-size: 0.68rem; color: var(--text-3); margin-top: 0.15rem; font-style: italic; }
-.rep-range-target { font-size: 0.68rem; color: var(--text-3); margin-bottom: 0.1rem; font-style: italic; }
+.weight-hint { font-size: 0.68rem; color: var(--text-3); margin-bottom: 0.2rem; font-style: italic; }
+.rep-range-target { font-size: 0.7rem; color: var(--text-3); margin-bottom: 0.3rem; font-style: italic; grid-column: 1 / -1; }
+.rir-select { height: 2.2rem !important; font-size: 1rem !important; padding: 0.25rem 0.5rem !important; border-radius: var(--r-md) !important; }
+.rir-group { min-width: 70px; }
+.set-sep { color: var(--text-3); margin: 0 0.15rem; }
+.rir-mini { font-size: 0.65rem; color: var(--text-3); background: var(--surface-2); padding: 0.05rem 0.3rem; border-radius: var(--r-sm); margin-left: 0.15rem; }
 
 /* ── Timed UI ──────────────────────────────────────────────────── */
 .timed-ui { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
