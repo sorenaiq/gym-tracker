@@ -683,6 +683,8 @@ def copy_session(session_id):
         db.commit()
     return redirect(url_for('workout', session_id=new_id))
 
+@app.route('/session/<int:session_id>/end', methods=['POST'])
+def end_session(session_id):
     db = get_db()
     db.execute('UPDATE workout_sessions SET ended = 1 WHERE id = ?', (session_id,))
     db.commit()
